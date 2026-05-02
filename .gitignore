@@ -37,5 +37,7 @@ htmlcov/
 
 # Local-only docs (task spec, internal notes)
 .claude/
+.agents/
 local-docs/
 local-scripts/
+skills-lock.json
