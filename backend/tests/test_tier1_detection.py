@@ -1,140 +1,113 @@
-"""Tier 1 contract tests — define success before implementing analyzers.
+"""Tier 1 detection contract tests.
 
-These tests run sample emails through the full DetectionEngine with all
-Tier 1 analyzers wired up. They encode the scoring contract from CLAUDE.md §13.
+Every fixture in email_fixtures declares expected score bounds and verdicts.
+These parametrized tests enforce those contracts across all ~40 scenarios.
 
 Run: python -m pytest tests/test_tier1_detection.py -v
 """
 
+from __future__ import annotations
+
 import pytest
 
 from detection_engine import DetectionEngine, Verdict
+from detection_engine.analyzers.content import ContentAnalyzer
+from detection_engine.analyzers.header import HeaderAnalyzer
+from detection_engine.analyzers.sender import SenderAnalyzer
 
 from tests.email_fixtures import (
     ALL_FIXTURES,
-    BEC_WIRE_TRANSFER,
-    EMPTY_MINIMAL,
-    LEGIT_AMAZON_ORDER,
-    LEGIT_MARKETING,
-    MALWARE_ATTACHMENT,
-    MASS_PHISHING,
-    SPEAR_PHISH_COUSIN_DOMAIN,
+    SAFE_FIXTURES,
     build_email_data,
 )
 
 
-# ---------------------------------------------------------------------------
-# Engine factory
-# ---------------------------------------------------------------------------
-
 def _build_engine() -> DetectionEngine:
-    """Wire up all Tier 1 analyzers, no intel sources."""
-    from detection_engine.analyzers.header import HeaderAnalyzer
-    from detection_engine.analyzers.sender import SenderAnalyzer
-    from detection_engine.analyzers.content import ContentAnalyzer
-
     return DetectionEngine(
         analyzers=[HeaderAnalyzer(), SenderAnalyzer(), ContentAnalyzer()],
     )
 
 
+ENGINE = _build_engine()
+
+
+def _fixture_id(fixture: dict) -> str:
+    return fixture["label"][:50]
+
+
 # ---------------------------------------------------------------------------
-# Contract tests — one class per scenario
+# Universal contract: every fixture stays within its declared bounds
 # ---------------------------------------------------------------------------
 
-class TestMassPhishing:
-    """Spoofed PayPal, auth failure, IP URL, urgency."""
 
-    def test_score_reaches_malicious(self):
-        result = _build_engine().analyze(build_email_data(MASS_PHISHING["email"]))
-        assert result.score >= 65, (
-            f"Phishing scored {result.score}, expected ≥65"
+class TestScoreBounds:
+    @pytest.mark.parametrize("fixture", ALL_FIXTURES, ids=_fixture_id)
+    def test_score_within_expected_range(self, fixture):
+        result = ENGINE.analyze(build_email_data(fixture["email"]))
+        expected = fixture["expected"]
+
+        if "min_score" in expected:
+            assert result.score >= expected["min_score"], (
+                f"Score {result.score} below min {expected['min_score']}"
+            )
+        if "max_score" in expected:
+            assert result.score <= expected["max_score"], (
+                f"Score {result.score} above max {expected['max_score']}"
+            )
+
+    @pytest.mark.parametrize("fixture", ALL_FIXTURES, ids=_fixture_id)
+    def test_score_is_valid(self, fixture):
+        result = ENGINE.analyze(build_email_data(fixture["email"]))
+        assert 0.0 <= result.score <= 100.0
+
+
+class TestVerdicts:
+    @pytest.mark.parametrize("fixture", ALL_FIXTURES, ids=_fixture_id)
+    def test_verdict_matches_expected(self, fixture):
+        result = ENGINE.analyze(build_email_data(fixture["email"]))
+        expected = fixture["expected"]
+
+        if "verdict" in expected:
+            assert result.verdict == expected["verdict"], (
+                f"Got {result.verdict.value}, expected {expected['verdict'].value}"
+            )
+        elif "verdict_in" in expected:
+            assert result.verdict in expected["verdict_in"], (
+                f"Got {result.verdict.value}, expected one of "
+                f"{[v.value for v in expected['verdict_in']]}"
+            )
+
+
+# ---------------------------------------------------------------------------
+# False-positive guard: all legitimate fixtures must score SAFE
+# ---------------------------------------------------------------------------
+
+
+class TestNoFalsePositives:
+    @pytest.mark.parametrize("fixture", SAFE_FIXTURES, ids=_fixture_id)
+    def test_legitimate_email_scores_safe(self, fixture):
+        result = ENGINE.analyze(build_email_data(fixture["email"]))
+        assert result.verdict == Verdict.SAFE, (
+            f"False positive: '{fixture['label']}' scored {result.score} "
+            f"({result.verdict.value})"
         )
-
-    def test_verdict_is_malicious(self):
-        result = _build_engine().analyze(build_email_data(MASS_PHISHING["email"]))
-        assert result.verdict == Verdict.MALICIOUS
+        assert result.score < 15
 
 
-class TestLegitAmazonOrder:
-    """Legitimate transactional email with valid authentication."""
-
-    def test_score_stays_safe(self):
-        result = _build_engine().analyze(build_email_data(LEGIT_AMAZON_ORDER["email"]))
-        assert result.score < 15, (
-            f"Legit Amazon scored {result.score}, expected <15"
-        )
-
-    def test_verdict_is_safe(self):
-        result = _build_engine().analyze(build_email_data(LEGIT_AMAZON_ORDER["email"]))
-        assert result.verdict == Verdict.SAFE
+# ---------------------------------------------------------------------------
+# Robustness: engine never crashes on any fixture
+# ---------------------------------------------------------------------------
 
 
-class TestBecWireTransfer:
-    """BEC: freemail sender, urgency, wire transfer, secrecy, reply-to mismatch."""
+class TestEngineRobustness:
+    @pytest.mark.parametrize("fixture", ALL_FIXTURES, ids=_fixture_id)
+    def test_no_crash(self, fixture):
+        result = ENGINE.analyze(build_email_data(fixture["email"]))
+        assert result.verdict in Verdict
 
-    def test_score_in_suspicious_range(self):
-        result = _build_engine().analyze(build_email_data(BEC_WIRE_TRANSFER["email"]))
-        assert 15 <= result.score < 65, (
-            f"BEC scored {result.score}, expected 15–64"
-        )
-
-    def test_verdict_is_at_least_suspicious(self):
-        result = _build_engine().analyze(build_email_data(BEC_WIRE_TRANSFER["email"]))
-        assert result.verdict in (Verdict.SUSPICIOUS, Verdict.LIKELY_MALICIOUS)
-
-
-class TestSpearPhishCousinDomain:
-    """Cousin domain (arnazon.com), auth passes, credential ask."""
-
-    def test_score_reaches_likely_malicious(self):
-        result = _build_engine().analyze(build_email_data(SPEAR_PHISH_COUSIN_DOMAIN["email"]))
-        assert result.score >= 35, (
-            f"Spear-phish scored {result.score}, expected ≥35"
-        )
-
-    def test_verdict_at_least_likely_malicious(self):
-        result = _build_engine().analyze(build_email_data(SPEAR_PHISH_COUSIN_DOMAIN["email"]))
-        assert result.verdict in (Verdict.LIKELY_MALICIOUS, Verdict.MALICIOUS)
-
-
-class TestLegitMarketing:
-    """ESP-sent marketing with valid auth and unsubscribe header."""
-
-    def test_score_stays_safe(self):
-        result = _build_engine().analyze(build_email_data(LEGIT_MARKETING["email"]))
-        assert result.score < 15, (
-            f"Legit marketing scored {result.score}, expected <15"
-        )
-
-    def test_verdict_is_safe(self):
-        result = _build_engine().analyze(build_email_data(LEGIT_MARKETING["email"]))
-        assert result.verdict == Verdict.SAFE
-
-
-class TestMalwareAttachment:
-    """Double extension .pdf.exe with urgency language."""
-
-    def test_score_reaches_malicious(self):
-        result = _build_engine().analyze(build_email_data(MALWARE_ATTACHMENT["email"]))
-        assert result.score >= 65, (
-            f"Malware email scored {result.score}, expected ≥65"
-        )
-
-    def test_verdict_is_malicious(self):
-        result = _build_engine().analyze(build_email_data(MALWARE_ATTACHMENT["email"]))
-        assert result.verdict == Verdict.MALICIOUS
-
-
-class TestEmptyMinimal:
-    """Empty email — no crash, no false positive."""
-
-    def test_no_crash_and_safe(self):
-        result = _build_engine().analyze(build_email_data(EMPTY_MINIMAL["email"]))
-        assert result.score < 15, (
-            f"Empty email scored {result.score}, expected <15"
-        )
-
-    def test_verdict_is_safe(self):
-        result = _build_engine().analyze(build_email_data(EMPTY_MINIMAL["email"]))
-        assert result.verdict == Verdict.SAFE
+    @pytest.mark.parametrize("fixture", ALL_FIXTURES, ids=_fixture_id)
+    def test_all_tier1_analyzers_ran(self, fixture):
+        result = ENGINE.analyze(build_email_data(fixture["email"]))
+        assert "header_analyzer" in result.scope.analyzers_run
+        assert "sender_analyzer" in result.scope.analyzers_run
+        assert "content_analyzer" in result.scope.analyzers_run
