@@ -14,12 +14,12 @@ class Attachment:
     filename: str
     mime_type: str
     size_bytes: int
-    sha256: str
+    sha256: str | None = None
 
     def __post_init__(self) -> None:
         if self.size_bytes < 0:
             raise ValueError("size_bytes must be non-negative")
-        if not _SHA256_HEX_PATTERN.match(self.sha256):
+        if self.sha256 is not None and not _SHA256_HEX_PATTERN.match(self.sha256):
             raise ValueError("sha256 must be a 64-char lowercase hex digest")
 
 
