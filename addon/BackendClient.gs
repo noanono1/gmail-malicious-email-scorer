@@ -1,73 +1,90 @@
 /**
- * Sends the email payload to the backend's /analyze endpoint with HMAC signing.
- * Returns the parsed analysis result or throws on failure.
- *
- * @param {Object} emailPayload - Structured email data from extractEmailData().
- * @returns {Object} Parsed AnalyzeResponse from the backend.
+ * Sends the email payload to the backend /analyze endpoint with HMAC signing.
  */
 function analyzeEmail(emailPayload) {
-  var backendUrl = _getProperty("BACKEND_URL");
-  var hmacSecret = _getProperty("HMAC_SECRET");
+  var backendUrl = getRequiredProperty("BACKEND_URL");
+  var hmacSecret = getRequiredProperty("HMAC_SECRET");
+  var endpoint = backendUrl + "/analyze";
+
+  console.log("Sending analysis request to: " + endpoint);
 
   var requestBody = JSON.stringify(emailPayload);
   var timestamp = Math.floor(Date.now() / 1000).toString();
-  var signature = _computeHmac(hmacSecret, timestamp, requestBody);
+  var signature = computeHmacSignature(hmacSecret, timestamp, requestBody);
 
-  var response = UrlFetchApp.fetch(backendUrl + "/analyze", {
+  var response = sendSignedRequest(endpoint, requestBody, timestamp, signature);
+  return parseAnalysisResponse(response);
+}
+
+/**
+ * Sends a signed POST request to the backend.
+ */
+function sendSignedRequest(url, body, timestamp, signature) {
+  var blob = Utilities.newBlob(body, "application/json; charset=utf-8");
+
+  var response = UrlFetchApp.fetch(url, {
     method: "post",
-    contentType: "application/json",
     headers: {
       "X-Timestamp": timestamp,
       "X-Signature": signature,
     },
-    payload: requestBody,
+    payload: blob,
     muteHttpExceptions: true,
   });
 
+  console.log("Backend responded with status: " + response.getResponseCode());
+  return response;
+}
+
+/**
+ * Parses the backend response, throwing on non-200 status codes.
+ */
+function parseAnalysisResponse(response) {
   var statusCode = response.getResponseCode();
+  var responseText = response.getContentText();
+
   if (statusCode !== 200) {
-    var errorDetail = "";
-    try {
-      errorDetail = JSON.parse(response.getContentText()).detail || "";
-    } catch (_) {}
-    throw new Error(
-      "Backend returned " + statusCode + (errorDetail ? ": " + errorDetail : "")
-    );
+    var errorDetail = tryExtractErrorDetail(responseText);
+    var message = "Backend returned " + statusCode + (errorDetail ? ": " + errorDetail : "");
+    console.log("Backend error: " + message);
+    throw new Error(message);
   }
 
-  return JSON.parse(response.getContentText());
+  var parsed = JSON.parse(responseText);
+  console.log("Analysis response parsed — verdict: " + parsed.verdict);
+  return parsed;
 }
 
 /**
- * Computes HMAC-SHA256 signature matching the backend's verification.
- * Signs (timestamp + body) with the shared secret.
- *
- * @param {string} secret - HMAC shared secret.
- * @param {string} timestamp - Unix epoch string.
- * @param {string} body - JSON request body.
- * @returns {string} Lowercase hex HMAC digest.
+ * Attempts to extract a detail message from a JSON error response.
  */
-function _computeHmac(secret, timestamp, body) {
-  var signatureBytes = Utilities.computeHmacSha256Signature(
-    timestamp + body,
-    secret
+function tryExtractErrorDetail(responseText) {
+  try {
+    return JSON.parse(responseText).detail || "";
+  } catch (_) {
+    return "";
+  }
+}
+
+/**
+ * Computes HMAC-SHA256 signature: sign(timestamp + body) with the shared secret.
+ */
+function computeHmacSignature(secret, timestamp, body) {
+  var dataToSign = timestamp + body;
+  var signatureBytes = Utilities.computeHmacSignature(
+    Utilities.MacAlgorithm.HMAC_SHA_256,
+    dataToSign,
+    secret,
+    Utilities.Charset.UTF_8
   );
 
-  return signatureBytes
-    .map(function (byte) {
-      var hex = (byte < 0 ? byte + 256 : byte).toString(16);
-      return hex.length === 1 ? "0" + hex : hex;
-    })
-    .join("");
+  return bytesToHex(signatureBytes);
 }
 
 /**
- * Reads a script property or throws a clear error if missing.
- *
- * @param {string} key - Property name.
- * @returns {string} Property value.
+ * Reads a required script property, throwing if missing.
  */
-function _getProperty(key) {
+function getRequiredProperty(key) {
   var value = PropertiesService.getScriptProperties().getProperty(key);
   if (!value) {
     throw new Error("Missing script property: " + key);

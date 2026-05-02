@@ -1,82 +1,103 @@
 /**
- * Extracts a structured email payload from a Gmail message, matching
- * the backend's AnalyzeRequest schema exactly.
- *
- * @param {string} messageId - Gmail message ID from the event object.
- * @returns {Object} Payload ready to POST to /analyze.
+ * Extracts a structured email payload matching the backend's AnalyzeRequest schema.
  */
 function extractEmailData(messageId) {
+  console.log("Extracting email data for: " + messageId);
   var gmailMessage = GmailApp.getMessageById(messageId);
-  var fullMessageData = Gmail.Users.Messages.get("me", messageId, { format: "full" });
 
-  var headers = _extractHeaders(fullMessageData.payload.headers);
-  var attachments = _extractAttachments(gmailMessage);
+  var sender = gmailMessage.getFrom();
+  var subject = gmailMessage.getSubject();
+  var attachments = extractAttachmentMetadata(gmailMessage);
+
+  console.log("Extracted email — attachments: " + attachments.length);
 
   return {
     message_id: messageId,
-    sender: gmailMessage.getFrom(),
+    sender: sender,
     recipient: gmailMessage.getTo(),
-    subject: gmailMessage.getSubject(),
+    subject: subject,
     body_text: gmailMessage.getPlainBody() || "",
     body_html: gmailMessage.getBody() || "",
-    headers: headers,
+    headers: extractSecurityHeaders(gmailMessage),
     attachments: attachments,
     date: gmailMessage.getDate().toISOString(),
   };
 }
 
-/**
- * Converts Gmail API headers to the backend's HeaderEntry[] format.
- * Preserves all headers including repeated ones (Received, Authentication-Results).
- *
- * @param {Object[]} gmailHeaders - Array of {name, value} from Gmail API.
- * @returns {Object[]} Array of {name, value} matching HeaderEntry schema.
- */
-function _extractHeaders(gmailHeaders) {
-  if (!gmailHeaders) return [];
+var SECURITY_HEADERS = [
+  "Authentication-Results",
+  "Received-SPF",
+  "DKIM-Signature",
+  "ARC-Authentication-Results",
+  "Return-Path",
+  "Reply-To",
+  "X-Mailer",
+  "X-Originating-IP",
+  "Received",
+  "From",
+  "To",
+  "Message-ID",
+  "Content-Type",
+];
 
-  return gmailHeaders.map(function (header) {
-    return {
-      name: header.name,
-      value: header.value,
-    };
+/**
+ * Extracts security-relevant headers using GmailMessage.getHeader().
+ * Limitation: getHeader() returns one value per name, so repeated headers
+ * (like Received) will only have their first value.
+ */
+function extractSecurityHeaders(gmailMessage) {
+  var headers = [];
+
+  SECURITY_HEADERS.forEach(function (headerName) {
+    var value = gmailMessage.getHeader(headerName);
+    if (value) {
+      headers.push({ name: headerName, value: value });
+    }
   });
+
+  console.log("Extracted " + headers.length + " security headers.");
+  return headers;
 }
 
 /**
  * Extracts attachment metadata without downloading binary content.
- * Computes SHA-256 hash of each attachment's bytes.
- *
- * @param {GmailMessage} message - Gmail message object.
- * @returns {Object[]} Array matching AttachmentRequest schema.
  */
-function _extractAttachments(gmailMessage) {
+function extractAttachmentMetadata(gmailMessage) {
   var attachments = gmailMessage.getAttachments();
   if (!attachments || attachments.length === 0) return [];
 
   return attachments.map(function (attachment) {
-    var attachmentBytes = attachment.getBytes();
-    var attachmentHash = _sha256Hex(attachmentBytes);
+    var name = attachment.getName();
+    var sizeBytes = attachment.getSize();
 
     return {
-      filename: attachment.getName(),
+      filename: name,
       mime_type: attachment.getContentType(),
-      size_bytes: attachmentBytes.length,
-      sha256: attachmentHash,
+      size_bytes: sizeBytes,
+      sha256: computeAttachmentSha256(attachment),
     };
   });
 }
 
 /**
- * Computes lowercase hex SHA-256 digest of a byte array.
- *
- * @param {Byte[]} bytes - Raw bytes to hash.
- * @returns {string} 64-character lowercase hex digest.
+ * Computes SHA-256 hash of an attachment's content.
  */
-function _sha256Hex(bytes) {
-  var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, bytes);
+function computeAttachmentSha256(attachment) {
+  try {
+    var bytes = attachment.getBytes();
+    var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, bytes);
+    return bytesToHex(digest);
+  } catch (error) {
+    console.log("SHA-256 computation failed: " + error.message);
+    return null;
+  }
+}
 
-  return digest
+/**
+ * Converts a byte array to a lowercase hex string.
+ */
+function bytesToHex(bytes) {
+  return bytes
     .map(function (byte) {
       var hex = (byte < 0 ? byte + 256 : byte).toString(16);
       return hex.length === 1 ? "0" + hex : hex;

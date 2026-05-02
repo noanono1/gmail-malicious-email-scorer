@@ -1,6 +1,3 @@
-/**
- * Verdict display configuration — colors and icons per verdict tier.
- */
 var VERDICT_STYLES = {
   safe:             { color: "#1B8332", icon: "✓", label: "SAFE" },
   suspicious:       { color: "#F9A825", icon: "⚠", label: "SUSPICIOUS" },
@@ -10,133 +7,183 @@ var VERDICT_STYLES = {
 
 /**
  * Builds the main analysis result card from the backend response.
- *
- * @param {Object} result - Parsed AnalyzeResponse from the backend.
- * @param {string} messageId - Gmail message ID for the re-analyze action.
- * @returns {CardService.Card} Fully rendered analysis card.
  */
 function buildAnalysisCard(result, messageId) {
   var verdictStyle = VERDICT_STYLES[result.verdict] || VERDICT_STYLES.safe;
   var cardBuilder = CardService.newCardBuilder();
 
-  // --- Header section: verdict + score ---
-  var headerSection = CardService.newCardSection();
-  headerSection.addWidget(
-    CardService.newTextParagraph().setText(
-      "<b><font color=\"" + verdictStyle.color + "\">" +
-      verdictStyle.icon + " " + verdictStyle.label +
-      "</font></b>          Score: " +
-      Math.round(result.score) + "/100"
-    )
-  );
-  cardBuilder.addSection(headerSection);
+  cardBuilder.addSection(buildVerdictSection(result, verdictStyle));
 
-  // --- Summary section ---
   if (result.explanation) {
-    var summarySection = CardService.newCardSection().setHeader("Summary");
-    summarySection.addWidget(
-      CardService.newTextParagraph().setText(result.explanation)
-    );
-    cardBuilder.addSection(summarySection);
+    cardBuilder.addSection(buildSummarySection(result.explanation));
   }
 
-  // --- Top findings section ---
   if (result.top_signals && result.top_signals.length > 0) {
-    var findingsSection = CardService.newCardSection().setHeader("Top Findings");
-
-    result.top_signals.forEach(function (signal) {
-      var severityLabel = signal.severity.toUpperCase();
-      var categoryLabel = signal.category.replace(/_/g, " ").toUpperCase();
-      var contribution = "+" + signal.score_contribution.toFixed(1) + " pts";
-
-      findingsSection.addWidget(
-        CardService.newDecoratedText()
-          .setTopLabel(categoryLabel + "  ·  " + severityLabel)
-          .setText(signal.evidence)
-          .setBottomLabel(contribution)
-      );
-    });
-
-    cardBuilder.addSection(findingsSection);
+    cardBuilder.addSection(buildFindingsSection(result.top_signals));
   }
 
-  // --- Blind spots section ---
   if (result.blind_spots && result.blind_spots.length > 0) {
-    var blindSpotsSection = CardService.newCardSection()
-      .setHeader("Blind Spots (" + result.blind_spots.length + ")")
-      .setCollapsible(true)
-      .setNumUncollapsibleWidgets(0);
-
-    result.blind_spots.forEach(function (blindSpot) {
-      blindSpotsSection.addWidget(
-        CardService.newDecoratedText()
-          .setText(blindSpot.risk_note)
-          .setBottomLabel(blindSpot.reason)
-      );
-    });
-
-    cardBuilder.addSection(blindSpotsSection);
+    cardBuilder.addSection(buildBlindSpotsSection(result.blind_spots));
   }
 
-  // --- Analysis scope section ---
   if (result.scope) {
-    var scopeSection = CardService.newCardSection()
-      .setHeader("Analysis Scope")
-      .setCollapsible(true)
-      .setNumUncollapsibleWidgets(0);
-
-    var scopeSummaryLines = [];
-    if (result.scope.analyzers_run.length > 0) {
-      scopeSummaryLines.push("Analyzers: " + result.scope.analyzers_run.join(", "));
-    } else {
-      scopeSummaryLines.push("Analyzers: none (skeleton mode)");
-    }
-    if (result.scope.intel_sources_run.length > 0) {
-      scopeSummaryLines.push("Intel: " + result.scope.intel_sources_run.join(", "));
-    }
-    scopeSummaryLines.push(
-      "HTML: " + (result.scope.has_html ? "yes" : "no") +
-      "  |  Attachments: " + (result.scope.has_attachments ? "yes" : "no") +
-      "  |  Auth headers: " + (result.scope.has_auth_headers ? "yes" : "no")
-    );
-
-    scopeSection.addWidget(
-      CardService.newTextParagraph().setText(scopeSummaryLines.join("\n"))
-    );
-    cardBuilder.addSection(scopeSection);
+    cardBuilder.addSection(buildScopeSection(result.scope));
   }
 
-  // --- Re-analyze button ---
-  var actionSection = CardService.newCardSection();
-  var reanalyzeAction = CardService.newAction()
-    .setFunctionName("onReanalyze")
-    .setParameters({ messageId: messageId });
-
-  actionSection.addWidget(
-    CardService.newTextButton()
-      .setText("↻ Re-analyze")
-      .setOnClickAction(reanalyzeAction)
-  );
-  cardBuilder.addSection(actionSection);
+  cardBuilder.addSection(buildReanalyzeButtonSection(messageId));
 
   return cardBuilder.build();
 }
 
 /**
- * Builds the error card shown when the backend is unreachable or returns an error.
- * Never implies safety on failure.
- *
- * @param {string} messageId - Gmail message ID for the retry action.
- * @returns {CardService.Card} Error card with retry button.
+ * Verdict badge + score.
+ */
+function buildVerdictSection(result, style) {
+  var section = CardService.newCardSection();
+
+  section.addWidget(
+    CardService.newTextParagraph().setText(
+      "<b><font color=\"" + style.color + "\">" +
+      style.icon + " " + style.label +
+      "</font></b>          Score: " +
+      Math.round(result.score) + "/100"
+    )
+  );
+
+  return section;
+}
+
+/**
+ * Explanation / summary text.
+ */
+function buildSummarySection(explanation) {
+  var section = CardService.newCardSection().setHeader("Summary");
+
+  section.addWidget(
+    CardService.newTextParagraph().setText(explanation)
+  );
+
+  return section;
+}
+
+/**
+ * Top signals with severity, category, evidence, and contribution.
+ */
+function buildFindingsSection(signals) {
+  var section = CardService.newCardSection().setHeader("Top Findings");
+
+  signals.forEach(function (signal) {
+    section.addWidget(buildSignalWidget(signal));
+  });
+
+  return section;
+}
+
+/**
+ * Single signal rendered as a DecoratedText widget.
+ */
+function buildSignalWidget(signal) {
+  var severityLabel = signal.severity.toUpperCase();
+  var categoryLabel = signal.category.replace(/_/g, " ").toUpperCase();
+  var contribution = "+" + signal.score_contribution.toFixed(1) + " pts";
+
+  return CardService.newDecoratedText()
+    .setTopLabel(categoryLabel + "  ·  " + severityLabel)
+    .setText(signal.evidence)
+    .setBottomLabel(contribution);
+}
+
+/**
+ * Collapsible blind spots section.
+ */
+function buildBlindSpotsSection(blindSpots) {
+  var section = CardService.newCardSection()
+    .setHeader("Blind Spots (" + blindSpots.length + ")")
+    .setCollapsible(true)
+    .setNumUncollapsibleWidgets(0);
+
+  blindSpots.forEach(function (blindSpot) {
+    section.addWidget(
+      CardService.newDecoratedText()
+        .setText(blindSpot.risk_note)
+        .setBottomLabel(blindSpot.reason)
+    );
+  });
+
+  return section;
+}
+
+/**
+ * Collapsible analysis scope section showing what ran.
+ */
+function buildScopeSection(scope) {
+  var section = CardService.newCardSection()
+    .setHeader("Analysis Scope")
+    .setCollapsible(true)
+    .setNumUncollapsibleWidgets(0);
+
+  var lines = formatScopeLines(scope);
+
+  section.addWidget(
+    CardService.newTextParagraph().setText(lines.join("\n"))
+  );
+
+  return section;
+}
+
+/**
+ * Formats scope info into human-readable lines.
+ */
+function formatScopeLines(scope) {
+  var lines = [];
+
+  if (scope.analyzers_run.length > 0) {
+    lines.push("Analyzers: " + scope.analyzers_run.join(", "));
+  } else {
+    lines.push("Analyzers: none (skeleton mode)");
+  }
+
+  if (scope.intel_sources_run.length > 0) {
+    lines.push("Intel: " + scope.intel_sources_run.join(", "));
+  }
+
+  lines.push(
+    "HTML: " + (scope.has_html ? "yes" : "no") +
+    "  |  Attachments: " + (scope.has_attachments ? "yes" : "no") +
+    "  |  Auth headers: " + (scope.has_auth_headers ? "yes" : "no")
+  );
+
+  return lines;
+}
+
+/**
+ * Re-analyze button section.
+ */
+function buildReanalyzeButtonSection(messageId) {
+  var section = CardService.newCardSection();
+
+  var reanalyzeAction = CardService.newAction()
+    .setFunctionName("onReanalyze")
+    .setParameters({ messageId: messageId });
+
+  section.addWidget(
+    CardService.newTextButton()
+      .setText("↻ Re-analyze")
+      .setOnClickAction(reanalyzeAction)
+  );
+
+  return section;
+}
+
+/**
+ * Error card — shown when the backend is unreachable.
  */
 function buildErrorCard(messageId) {
   var cardBuilder = CardService.newCardBuilder();
 
   var section = CardService.newCardSection();
   section.addWidget(
-    CardService.newTextParagraph().setText(
-      "<b>Analysis Unavailable</b>"
-    )
+    CardService.newTextParagraph().setText("<b>Analysis Unavailable</b>")
   );
   section.addWidget(
     CardService.newTextParagraph().setText(
