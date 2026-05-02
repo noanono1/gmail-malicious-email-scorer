@@ -1,6 +1,6 @@
 # --- /analyze endpoint ---
 #
-# THE MAIN ENDPOINT. This is where the Gmail Add-on sends emails for analysis.
+# Gmail Add-on sends emails for analysis.
 #
 # REQUEST FLOW:
 # 1. Add-on extracts email data from Gmail API

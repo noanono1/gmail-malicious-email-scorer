@@ -12,10 +12,10 @@ function onGmailMessageOpen(event) {
   try {
     var emailPayload = extractEmailData(messageId);
     var analysisResult = analyzeEmail(emailPayload);
-    return [buildAnalysisCard(analysisResult)];
+    return [buildAnalysisCard(analysisResult, messageId)];
   } catch (error) {
     Logger.log("Error analyzing email: " + error.message);
-    return [buildErrorCard(error.message)];
+    return [buildErrorCard(messageId)];
   }
 }
 
@@ -32,14 +32,14 @@ function onReanalyze(event) {
   try {
     var emailPayload = extractEmailData(messageId);
     var analysisResult = analyzeEmail(emailPayload);
-    var card = buildAnalysisCard(analysisResult);
+    var card = buildAnalysisCard(analysisResult, messageId);
 
     return CardService.newActionResponseBuilder()
       .setNavigation(CardService.newNavigation().updateCard(card))
       .build();
   } catch (error) {
     Logger.log("Re-analyze error: " + error.message);
-    var errorCard = buildErrorCard(error.message);
+    var errorCard = buildErrorCard(messageId);
 
     return CardService.newActionResponseBuilder()
       .setNavigation(CardService.newNavigation().updateCard(errorCard))

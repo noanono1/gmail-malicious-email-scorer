@@ -71,7 +71,7 @@ async def verify_hmac(
     # take a valid signature and pair it with a different timestamp.
     expected_signature = hmac.new(
         HMAC_SECRET.encode(),           # the shared secret (key)
-        f"{x_timestamp}".encode() + request_body,  # the message: timestamp + body
+        x_timestamp.encode() + request_body,  # the message: timestamp + body
         hashlib.sha256,                 # hash algorithm
     ).hexdigest()                       # output as hex string
 

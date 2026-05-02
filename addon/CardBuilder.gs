@@ -12,9 +12,10 @@ var VERDICT_STYLES = {
  * Builds the main analysis result card from the backend response.
  *
  * @param {Object} result - Parsed AnalyzeResponse from the backend.
+ * @param {string} messageId - Gmail message ID for the re-analyze action.
  * @returns {CardService.Card} Fully rendered analysis card.
  */
-function buildAnalysisCard(result) {
+function buildAnalysisCard(result, messageId) {
   var verdictStyle = VERDICT_STYLES[result.verdict] || VERDICT_STYLES.safe;
   var cardBuilder = CardService.newCardBuilder();
 
@@ -109,7 +110,7 @@ function buildAnalysisCard(result) {
   var actionSection = CardService.newCardSection();
   var reanalyzeAction = CardService.newAction()
     .setFunctionName("onReanalyze")
-    .setParameters({ messageId: result.message_id || "" });
+    .setParameters({ messageId: messageId });
 
   actionSection.addWidget(
     CardService.newTextButton()
@@ -125,10 +126,10 @@ function buildAnalysisCard(result) {
  * Builds the error card shown when the backend is unreachable or returns an error.
  * Never implies safety on failure.
  *
- * @param {string} errorMessage - Error description for logging context.
+ * @param {string} messageId - Gmail message ID for the retry action.
  * @returns {CardService.Card} Error card with retry button.
  */
-function buildErrorCard(errorMessage) {
+function buildErrorCard(messageId) {
   var cardBuilder = CardService.newCardBuilder();
 
   var section = CardService.newCardSection();
@@ -145,7 +146,8 @@ function buildErrorCard(errorMessage) {
   );
 
   var retryAction = CardService.newAction()
-    .setFunctionName("onGmailMessageOpen");
+    .setFunctionName("onReanalyze")
+    .setParameters({ messageId: messageId });
 
   section.addWidget(
     CardService.newTextButton()
