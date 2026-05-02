@@ -43,7 +43,11 @@ var SECURITY_HEADERS = [
 /**
  * Extracts security-relevant headers using GmailMessage.getHeader().
  * Limitation: getHeader() returns one value per name, so repeated headers
- * (like Received) will only have their first value.
+ * (like Received, Authentication-Results) will only have their first value.
+ *
+ * TODO: switch to Gmail Advanced Service (Gmail.Users.Messages.get with
+ * format:"metadata") to capture all repeated headers — the header analyzer
+ * needs multiple Authentication-Results to see full SPF/DKIM/DMARC picture.
  */
 function extractSecurityHeaders(gmailMessage) {
   var headers = [];

@@ -30,8 +30,6 @@ function buildAnalysisCard(result, messageId) {
     cardBuilder.addSection(buildScopeSection(result.scope));
   }
 
-  cardBuilder.addSection(buildReanalyzeButtonSection(messageId));
-
   return cardBuilder.build();
 }
 
@@ -154,25 +152,6 @@ function formatScopeLines(scope) {
   );
 
   return lines;
-}
-
-/**
- * Re-analyze button section.
- */
-function buildReanalyzeButtonSection(messageId) {
-  var section = CardService.newCardSection();
-
-  var reanalyzeAction = CardService.newAction()
-    .setFunctionName("onReanalyze")
-    .setParameters({ messageId: messageId });
-
-  section.addWidget(
-    CardService.newTextButton()
-      .setText("↻ Re-analyze")
-      .setOnClickAction(reanalyzeAction)
-  );
-
-  return section;
 }
 
 /**
