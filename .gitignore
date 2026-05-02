@@ -36,4 +36,6 @@ htmlcov/
 .clasp.json
 
 # Local-only docs (task spec, internal notes)
-docs/
+.claude/
+local-docs/
+local-scripts/
