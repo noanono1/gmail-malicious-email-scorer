@@ -8,12 +8,14 @@ from detection_engine.domain.enums import (
 )
 from detection_engine.domain.signals import BlindSpot, DetectionOutput, Signal
 from detection_engine.domain.verdict import AnalysisResult, ScopeInfo
+from detection_engine.engine import DetectionEngine
 
 __all__ = [
     "AnalysisResult",
     "Attachment",
     "BlindSpot",
     "BlindSpotArea",
+    "DetectionEngine",
     "DetectionOutput",
     "EmailData",
     "EmailHeaders",
