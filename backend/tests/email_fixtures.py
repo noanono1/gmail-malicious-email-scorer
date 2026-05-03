@@ -104,6 +104,7 @@ MASS_PHISHING_PAYPAL = {
     "email": _email(
         message_id="phish-001",
         sender_address="security@paypa1-support.com",
+        sender_display_name="PayPal Security",
         recipient="victim@example.com",
         subject="Your account has been limited - Immediate action required",
         date="2026-05-01T10:00:00+00:00",
@@ -278,6 +279,7 @@ SPEAR_PHISH_COUSIN_DOMAIN = {
     "email": _email(
         message_id="spear-001",
         sender_address="account-update@arnazon.com",
+        sender_display_name="Amazon Customer Service",
         recipient="employee@targetcorp.com",
         subject="Action required: verify your payment method",
         date="2026-05-01T11:15:00+00:00",
@@ -1557,6 +1559,7 @@ CREDENTIAL_PHISH_OAUTH = {
     "email": _email(
         message_id="special-003",
         sender_address="security@docs-google-verify.com",
+        sender_display_name="Google Docs Team",
         recipient="user@example.com",
         subject="Important: review document shared with you",
         date="2026-05-01T12:00:00+00:00",

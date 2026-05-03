@@ -2,44 +2,17 @@ from __future__ import annotations
 
 import re
 
+import tldextract
+
+_extractor = tldextract.TLDExtract(suffix_list_urls=())
+
 from detection_engine.analyzers.base import BaseAnalyzer
 from detection_engine.domain.email import EmailData
 from detection_engine.domain.enums import SignalCategory, SignalSeverity
 from detection_engine.domain.signals import AnalysisOutput, Signal
 
 # ---------------------------------------------------------------------------
-# Brand intelligence — name → legitimate domains owned by that brand
-# ---------------------------------------------------------------------------
-
-_BRANDS: dict[str, frozenset[str]] = {
-    "paypal": frozenset({"paypal.com"}),
-    "amazon": frozenset({"amazon.com", "amazon.co.uk", "amazon.de", "amazon.co.jp"}),
-    "apple": frozenset({"apple.com"}),
-    "microsoft": frozenset({"microsoft.com"}),
-    "google": frozenset({"google.com"}),
-    "netflix": frozenset({"netflix.com"}),
-    "facebook": frozenset({"facebook.com", "meta.com"}),
-    "instagram": frozenset({"instagram.com"}),
-    "linkedin": frozenset({"linkedin.com"}),
-    "dropbox": frozenset({"dropbox.com"}),
-    "adobe": frozenset({"adobe.com"}),
-    "spotify": frozenset({"spotify.com"}),
-    "walmart": frozenset({"walmart.com"}),
-    "ebay": frozenset({"ebay.com"}),
-    "chase": frozenset({"chase.com"}),
-    "wellsfargo": frozenset({"wellsfargo.com"}),
-    "citibank": frozenset({"citibank.com", "citi.com"}),
-    "gmail": frozenset({"gmail.com"}),
-    "outlook": frozenset({"outlook.com"}),
-    "yahoo": frozenset({"yahoo.com", "yahoo.co.uk"}),
-    "fedex": frozenset({"fedex.com"}),
-    "twitter": frozenset({"twitter.com", "x.com"}),
-}
-
-_ALL_LEGITIMATE_DOMAINS: frozenset[str] = frozenset().union(*_BRANDS.values())
-
-# ---------------------------------------------------------------------------
-# Character substitution maps for cousin domain normalization
+# Character substitution maps for typosquat normalization
 # ---------------------------------------------------------------------------
 
 _SEQUENCE_SUBSTITUTIONS: tuple[tuple[str, str], ...] = (
@@ -53,24 +26,6 @@ _CHAR_SUBSTITUTIONS: dict[str, str] = {
     "0": "o",
     "5": "s",
 }
-
-# ---------------------------------------------------------------------------
-# Domain segment filtering
-# ---------------------------------------------------------------------------
-
-_TLDS: frozenset[str] = frozenset({
-    "com", "net", "org", "io", "co", "uk", "de", "fr", "jp",
-    "us", "info", "biz", "xyz", "me", "in", "ru", "edu", "gov",
-})
-
-# Common domain words that aren't brands — skip to avoid false positives
-# against short brand names (e.g. "mail" is distance 1 from "gmail").
-_IGNORED_SEGMENTS: frozenset[str] = frozenset({
-    "mail", "email", "smtp", "web", "www", "app",
-    "cloud", "host", "server", "online", "shop", "store",
-    "help", "info", "news", "blog", "api", "dev", "auth",
-    "login", "secure", "mobile", "beta", "pro", "pay",
-})
 
 # ---------------------------------------------------------------------------
 # Freemail, ESP, and org-keyword lists
@@ -98,8 +53,29 @@ _ESP_DOMAINS: frozenset[str] = frozenset({
 })
 
 # ---------------------------------------------------------------------------
+# Display name brand-token filtering
+# ---------------------------------------------------------------------------
+
+_NON_BRAND_TOKENS: frozenset[str] = frozenset({
+    "bank", "security", "support", "helpdesk", "official",
+    "team", "department", "dept", "corporate", "inc", "ltd",
+    "foundation", "institute", "government", "federal",
+    "customer", "service", "services", "center", "centre",
+    "notification", "notifications", "alert", "alerts",
+    "account", "accounts", "billing", "admin", "administrator",
+    "info", "information", "noreply", "reply", "mail", "email",
+    "update", "updates", "verify", "verification", "confirm",
+    "the", "from", "your", "our", "dear", "welcome", "new",
+    "please", "important", "urgent", "action", "required",
+    "mr", "mrs", "ms", "dr", "sir", "madam",
+    "online", "secure", "system", "systems", "automated",
+    "com", "org", "net", "edu", "gov",
+})
+
+# ---------------------------------------------------------------------------
 # Parsing helpers
 # ---------------------------------------------------------------------------
+
 
 def _sender_domain(sender_address: str) -> str | None:
     _, sep, domain = sender_address.rpartition("@")
@@ -108,23 +84,19 @@ def _sender_domain(sender_address: str) -> str | None:
     return domain.lower() if domain else None
 
 
-def _is_legitimate_domain(domain: str) -> bool:
-    if domain in _ALL_LEGITIMATE_DOMAINS:
-        return True
-    return any(domain.endswith(f".{legit}") for legit in _ALL_LEGITIMATE_DOMAINS)
+def _registered_domain(domain: str) -> str:
+    extracted = _extractor(domain)
+    if extracted.domain and extracted.suffix:
+        return f"{extracted.domain}.{extracted.suffix}"
+    return domain
+
+
+def _same_organization(domain_a: str, domain_b: str) -> bool:
+    return _registered_domain(domain_a) == _registered_domain(domain_b)
 
 
 def _is_esp_domain(domain: str) -> bool:
     return any(domain == esp or domain.endswith(f".{esp}") for esp in _ESP_DOMAINS)
-
-
-def _domain_segments(domain: str) -> list[str]:
-    parts = re.split(r"[.\-]", domain)
-    return [
-        p
-        for p in parts
-        if len(p) > 2 and p.lower() not in _TLDS and p.lower() not in _IGNORED_SEGMENTS
-    ]
 
 
 def _normalize(text: str) -> str:
@@ -149,12 +121,28 @@ def _levenshtein(a: str, b: str) -> int:
     return previous[-1]
 
 
-def _max_distance_for_brand(brand: str) -> int:
-    if len(brand) >= 7:
+def _max_typosquat_distance(token: str) -> int:
+    if len(token) >= 7:
         return 2
-    if len(brand) >= 5:
+    if len(token) >= 5:
         return 1
     return 0
+
+
+def _extract_brand_tokens(display_name: str) -> list[str]:
+    raw_tokens = re.split(r"[\s\-_.,;:!?|/\\@()\[\]<>\"']+", display_name)
+    return [
+        t.lower()
+        for t in raw_tokens
+        if len(t) >= 3 and t.lower() not in _NON_BRAND_TOKENS
+    ]
+
+
+def _sender_domain_segments(sender_domain: str) -> list[str]:
+    extracted = _extractor(sender_domain)
+    if not extracted.domain:
+        return []
+    return [s for s in extracted.domain.split("-") if len(s) >= 3]
 
 
 # ---------------------------------------------------------------------------
@@ -179,44 +167,77 @@ class SenderAnalyzer(BaseAnalyzer):
 
         signals: list[Signal] = []
 
-        self._check_cousin_domain(sender_domain, signals)
+        self._check_display_name_mismatch(email, sender_domain, signals)
         self._check_freemail_org_name(email, sender_domain, signals)
         self._check_reply_to_mismatch(email, sender_domain, signals)
         self._check_return_path_mismatch(email, sender_domain, signals)
 
         return AnalysisOutput(signals=tuple(signals), blind_spots=())
 
-    def _check_cousin_domain(
-        self, sender_domain: str, signals: list[Signal]
+    def _check_display_name_mismatch(
+        self, email: EmailData, sender_domain: str, signals: list[Signal]
     ) -> None:
-        if _is_legitimate_domain(sender_domain):
+        display_name = email.sender_display_name
+        if not display_name:
             return
 
-        segments = _domain_segments(sender_domain)
+        brand_tokens = _extract_brand_tokens(display_name)
+        if not brand_tokens:
+            return
 
-        for segment in segments:
-            normalized = _normalize(segment)
-            for brand in _BRANDS:
-                threshold = _max_distance_for_brand(brand)
-                distance = _levenshtein(normalized, brand)
+        extracted = _extractor(sender_domain)
+        registered_name = extracted.domain
+        if not registered_name:
+            return
 
-                if distance > threshold:
-                    raw_distance = _levenshtein(segment.lower(), brand)
-                    if raw_distance > threshold:
-                        continue
-                    distance = raw_distance
-
-                confidence = 1.0 if distance == 0 else 0.9 if distance == 1 else 0.8
-                signals.append(
-                    Signal(
-                        id="cousin_domain",
-                        category=SignalCategory.SENDER_IDENTITY,
-                        severity=SignalSeverity.CRITICAL,
-                        confidence=confidence,
-                        evidence=f"Sender domain '{sender_domain}' resembles brand '{brand}'",
-                    )
-                )
+        # Brand token IS the full registered domain name → legitimate
+        for token in brand_tokens:
+            if token == registered_name.lower():
                 return
+
+        # Segment-level typosquat detection (catches near-misses
+        # AND brand names embedded in non-brand domains)
+        sender_segments = [s for s in registered_name.split("-") if len(s) >= 3]
+        for token in brand_tokens:
+            normalized_token = _normalize(token)
+            threshold = _max_typosquat_distance(token)
+            for segment in sender_segments:
+                normalized_segment = _normalize(segment.lower())
+                distance = _levenshtein(normalized_token, normalized_segment)
+                if distance <= threshold:
+                    confidence = (
+                        1.0 if distance == 0 else 0.9 if distance == 1 else 0.8
+                    )
+                    signals.append(
+                        Signal(
+                            id="cousin_domain",
+                            category=SignalCategory.SENDER_IDENTITY,
+                            severity=SignalSeverity.CRITICAL,
+                            confidence=confidence,
+                            evidence=(
+                                f"Sender domain '{sender_domain}' resembles "
+                                f"claimed identity '{token}' in display name"
+                            ),
+                        )
+                    )
+                    return
+
+        # Complete mismatch — only flag with organizational context
+        name_words = {w.lower() for w in re.split(r"[\s\-_]+", display_name)}
+        if name_words & _ORG_KEYWORDS:
+            signals.append(
+                Signal(
+                    id="display_name_mismatch",
+                    category=SignalCategory.SENDER_IDENTITY,
+                    severity=SignalSeverity.HIGH,
+                    confidence=0.8,
+                    evidence=(
+                        f"Display name '{display_name}' implies brand "
+                        f"'{brand_tokens[0]}' but sender domain is "
+                        f"'{sender_domain}'"
+                    ),
+                )
+            )
 
     def _check_freemail_org_name(
         self, email: EmailData, sender_domain: str, signals: list[Signal]
@@ -253,6 +274,9 @@ class SenderAnalyzer(BaseAnalyzer):
         if reply_domain is None or reply_domain == sender_domain:
             return
 
+        if _same_organization(reply_domain, sender_domain):
+            return
+
         signals.append(
             Signal(
                 id="reply_to_mismatch",
@@ -274,6 +298,9 @@ class SenderAnalyzer(BaseAnalyzer):
 
         return_domain = _sender_domain(email.return_path_address)
         if return_domain is None or return_domain == sender_domain:
+            return
+
+        if _same_organization(return_domain, sender_domain):
             return
 
         if _is_esp_domain(return_domain):

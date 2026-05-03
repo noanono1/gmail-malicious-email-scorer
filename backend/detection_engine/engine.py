@@ -166,10 +166,10 @@ class DetectionEngine:
         if not top_signals:
             if blind_spots:
                 return (
-                    f"Verdict: {verdict.value}. No threat signals detected, "
+                    f"Verdict: {verdict.value}. \n No threat signals detected, "
                     f"but {len(blind_spots)} area(s) could not be inspected."
                 )
-            return f"Verdict: {verdict.value}. No threat signals detected."
+            return f"Verdict: {verdict.value}. \n No threat signals detected."
 
         header = f"Verdict: {verdict.value}."
 

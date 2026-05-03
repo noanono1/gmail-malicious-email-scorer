@@ -1,4 +1,4 @@
-"""Unit tests for SenderAnalyzer — cousin domains, freemail, reply-to, return-path."""
+"""Unit tests for SenderAnalyzer — display name mismatch, freemail, reply-to, return-path."""
 
 from __future__ import annotations
 
@@ -6,9 +6,13 @@ import pytest
 
 from detection_engine.analyzers.sender import (
     SenderAnalyzer,
+    _extract_brand_tokens,
     _levenshtein,
     _normalize,
+    _registered_domain,
+    _same_organization,
     _sender_domain,
+    _sender_domain_segments,
 )
 from detection_engine.domain.email import EmailData, EmailHeaders
 from detection_engine.domain.enums import SignalCategory, SignalSeverity
@@ -53,49 +57,112 @@ def analyzer() -> SenderAnalyzer:
 
 
 # ---------------------------------------------------------------------------
-# SENDER-1: Cousin domain detection
+# SENDER-1: Display name mismatch (replaces hardcoded brand list)
 # ---------------------------------------------------------------------------
 
 
-class TestCousinDomain:
-    def test_paypal_lookalike_with_digit(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender_address="user@paypa1-support.com")
+class TestDisplayNameMismatch:
+    def test_typosquat_digit_substitution(self, analyzer: SenderAnalyzer):
+        email = _make_email(
+            sender_address="user@paypa1-support.com",
+            sender_display_name="PayPal Security",
+        )
         output = analyzer.analyze(email)
         cousin = [s for s in output.signals if s.id == "cousin_domain"]
         assert len(cousin) == 1
         assert cousin[0].severity == SignalSeverity.CRITICAL
         assert "paypal" in cousin[0].evidence
 
-    def test_amazon_lookalike_with_rn(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender_address="user@arnazon.com")
+    def test_typosquat_rn_substitution(self, analyzer: SenderAnalyzer):
+        email = _make_email(
+            sender_address="user@arnazon.com",
+            sender_display_name="Amazon Customer Service",
+        )
         output = analyzer.analyze(email)
         cousin = [s for s in output.signals if s.id == "cousin_domain"]
         assert len(cousin) == 1
         assert "amazon" in cousin[0].evidence
 
-    def test_legitimate_brand_not_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender_address="user@paypal.com")
+    def test_legitimate_domain_not_flagged(self, analyzer: SenderAnalyzer):
+        email = _make_email(
+            sender_address="user@paypal.com",
+            sender_display_name="PayPal Security",
+        )
         output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "cousin_domain"]
+        assert not [s for s in output.signals if s.id in ("cousin_domain", "display_name_mismatch")]
 
-    def test_legitimate_subdomain_not_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender_address="user@mail.paypal.com")
+    def test_subdomain_not_flagged(self, analyzer: SenderAnalyzer):
+        email = _make_email(
+            sender_address="user@mail.paypal.com",
+            sender_display_name="PayPal",
+        )
         output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "cousin_domain"]
+        assert not [s for s in output.signals if s.id in ("cousin_domain", "display_name_mismatch")]
 
-    def test_unrelated_domain_not_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender_address="user@totally-unrelated.com")
+    def test_no_display_name_no_signal(self, analyzer: SenderAnalyzer):
+        email = _make_email(sender_address="user@paypa1.com")
         output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "cousin_domain"]
+        assert not [s for s in output.signals if s.id in ("cousin_domain", "display_name_mismatch")]
+
+    def test_generic_display_name_no_signal(self, analyzer: SenderAnalyzer):
+        email = _make_email(
+            sender_address="user@random.com",
+            sender_display_name="IT Support",
+        )
+        output = analyzer.analyze(email)
+        assert not [s for s in output.signals if s.id in ("cousin_domain", "display_name_mismatch")]
+
+    def test_impersonation_with_org_context(self, analyzer: SenderAnalyzer):
+        email = _make_email(
+            sender_address="user@random.com",
+            sender_display_name="PayPal Security",
+        )
+        output = analyzer.analyze(email)
+        mismatch = [s for s in output.signals if s.id == "display_name_mismatch"]
+        assert len(mismatch) == 1
+        assert mismatch[0].severity == SignalSeverity.HIGH
+        assert "paypal" in mismatch[0].evidence
+
+    def test_no_impersonation_without_org_context(self, analyzer: SenderAnalyzer):
+        email = _make_email(
+            sender_address="user@random.com",
+            sender_display_name="PayPal",
+        )
+        output = analyzer.analyze(email)
+        assert not [s for s in output.signals if s.id == "display_name_mismatch"]
+
+    def test_personal_name_no_signal(self, analyzer: SenderAnalyzer):
+        email = _make_email(
+            sender_address="alice@company.com",
+            sender_display_name="Alice Johnson",
+        )
+        output = analyzer.analyze(email)
+        assert not [s for s in output.signals if s.id in ("cousin_domain", "display_name_mismatch")]
 
     def test_confidence_exact_after_normalization(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender_address="user@paypa1.com")
+        email = _make_email(
+            sender_address="user@paypa1.com",
+            sender_display_name="PayPal Support",
+        )
         output = analyzer.analyze(email)
         signal = [s for s in output.signals if s.id == "cousin_domain"][0]
         assert signal.confidence == 1.0
 
-    def test_only_one_cousin_signal_per_email(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender_address="user@paypa1.com")
+    def test_brand_embedded_in_non_brand_domain(self, analyzer: SenderAnalyzer):
+        email = _make_email(
+            sender_address="user@docs-google-verify.com",
+            sender_display_name="Google Docs Team",
+        )
+        output = analyzer.analyze(email)
+        cousin = [s for s in output.signals if s.id == "cousin_domain"]
+        assert len(cousin) == 1
+        assert cousin[0].severity == SignalSeverity.CRITICAL
+
+    def test_only_one_signal_per_email(self, analyzer: SenderAnalyzer):
+        email = _make_email(
+            sender_address="user@paypa1.com",
+            sender_display_name="PayPal Security Team",
+        )
         output = analyzer.analyze(email)
         assert len([s for s in output.signals if s.id == "cousin_domain"]) == 1
 
@@ -162,6 +229,14 @@ class TestReplyToMismatch:
         output = analyzer.analyze(email)
         assert not [s for s in output.signals if s.id == "reply_to_mismatch"]
 
+    def test_subdomain_reply_to_not_flagged(self, analyzer: SenderAnalyzer):
+        email = _make_email(
+            sender_address="user@company.com",
+            reply_to_address="support@mail.company.com",
+        )
+        output = analyzer.analyze(email)
+        assert not [s for s in output.signals if s.id == "reply_to_mismatch"]
+
     def test_absent_reply_to_not_flagged(self, analyzer: SenderAnalyzer):
         email = _make_email(sender_address="user@company.com")
         output = analyzer.analyze(email)
@@ -208,6 +283,31 @@ class TestReturnPathMismatch:
         output = analyzer.analyze(email)
         assert not [s for s in output.signals if s.id == "return_path_mismatch"]
 
+    def test_bounce_subdomain_not_flagged(self, analyzer: SenderAnalyzer):
+        email = _make_email(
+            sender_address="alerts@accounts.google.com",
+            return_path_address="noreply@gaia.bounces.google.com",
+        )
+        output = analyzer.analyze(email)
+        assert not [s for s in output.signals if s.id == "return_path_mismatch"]
+
+    def test_country_tld_subdomain_not_flagged(self, analyzer: SenderAnalyzer):
+        email = _make_email(
+            sender_address="user@amazon.co.uk",
+            return_path_address="bounce@ses.amazon.co.uk",
+        )
+        output = analyzer.analyze(email)
+        assert not [s for s in output.signals if s.id == "return_path_mismatch"]
+
+    def test_different_registered_domain_still_flagged(self, analyzer: SenderAnalyzer):
+        email = _make_email(
+            sender_address="ceo@company.com",
+            return_path_address="bounce@attacker.com",
+        )
+        output = analyzer.analyze(email)
+        rp = [s for s in output.signals if s.id == "return_path_mismatch"]
+        assert len(rp) == 1
+
 
 # ---------------------------------------------------------------------------
 # Score contribution
@@ -218,6 +318,7 @@ class TestScoreContribution:
     def test_all_signals_have_zero_contribution(self, analyzer: SenderAnalyzer):
         email = _make_email(
             sender_address="user@paypa1.com",
+            sender_display_name="PayPal Support",
             reply_to_address="secret@evil.com",
             return_path_address="bounce@shady.xyz",
         )
@@ -304,3 +405,47 @@ class TestHelpers:
 
     def test_normalize_digit_zero(self):
         assert _normalize("g00gle") == "google"
+
+    def test_registered_domain_simple(self):
+        assert _registered_domain("google.com") == "google.com"
+
+    def test_registered_domain_subdomain(self):
+        assert _registered_domain("accounts.google.com") == "google.com"
+
+    def test_registered_domain_deep_subdomain(self):
+        assert _registered_domain("gaia.bounces.google.com") == "google.com"
+
+    def test_registered_domain_country_tld(self):
+        assert _registered_domain("amazon.co.uk") == "amazon.co.uk"
+
+    def test_same_organization_true(self):
+        assert _same_organization("bounces.google.com", "accounts.google.com")
+
+    def test_same_organization_false(self):
+        assert not _same_organization("google.com", "attacker.com")
+
+    def test_same_organization_country_tld(self):
+        assert _same_organization("ses.amazon.co.uk", "amazon.co.uk")
+
+    def test_extract_brand_tokens_filters_generic(self):
+        assert _extract_brand_tokens("IT Security Support") == []
+
+    def test_extract_brand_tokens_keeps_brand(self):
+        assert _extract_brand_tokens("PayPal Security") == ["paypal"]
+
+    def test_extract_brand_tokens_multiple(self):
+        tokens = _extract_brand_tokens("Amazon Prime Service")
+        assert "amazon" in tokens
+        assert "prime" in tokens
+
+    def test_extract_brand_tokens_short_filtered(self):
+        assert _extract_brand_tokens("AT T") == []
+
+    def test_sender_domain_segments_simple(self):
+        assert _sender_domain_segments("paypal.com") == ["paypal"]
+
+    def test_sender_domain_segments_hyphenated(self):
+        assert _sender_domain_segments("paypa1-support.com") == ["paypa1", "support"]
+
+    def test_sender_domain_segments_short_filtered(self):
+        assert _sender_domain_segments("a-bc-def.com") == ["def"]
