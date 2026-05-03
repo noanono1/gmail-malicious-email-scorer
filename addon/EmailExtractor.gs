@@ -5,7 +5,7 @@ function extractEmailData(messageId) {
   console.log("Extracting email data for: " + messageId);
   var gmailMessage = GmailApp.getMessageById(messageId);
 
-  var sender = gmailMessage.getFrom();
+  var parsedSender = parseFromField(gmailMessage.getFrom());
   var subject = gmailMessage.getSubject();
   var attachments = extractAttachmentMetadata(gmailMessage);
 
@@ -13,7 +13,8 @@ function extractEmailData(messageId) {
 
   return {
     message_id: messageId,
-    sender: sender,
+    sender_address: parsedSender.address,
+    sender_display_name: parsedSender.displayName,
     recipient: gmailMessage.getTo(),
     subject: subject,
     body_text: gmailMessage.getPlainBody() || "",
@@ -22,6 +23,21 @@ function extractEmailData(messageId) {
     attachments: attachments,
     date: gmailMessage.getDate().toISOString(),
   };
+}
+
+/**
+ * Splits a raw From field into address and display name.
+ * "Display Name" <user@example.com> → { address, displayName }
+ * user@example.com                  → { address, displayName: "" }
+ */
+function parseFromField(rawFrom) {
+  var match = rawFrom.match(/<([^>]+)>/);
+  if (match) {
+    var address = match[1];
+    var displayName = rawFrom.replace(/<[^>]+>/, "").trim().replace(/^"|"$/g, "");
+    return { address: address, displayName: displayName };
+  }
+  return { address: rawFrom.trim(), displayName: "" };
 }
 
 var SECURITY_HEADERS = [

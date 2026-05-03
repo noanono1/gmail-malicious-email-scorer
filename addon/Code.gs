@@ -28,9 +28,30 @@ function onGmailMessageOpen(event) {
     messageId = event.gmail.messageId;
     console.log("Opened message: " + messageId);
 
+    var cache = CacheService.getUserCache();
+    var cacheKey = "analysis_" + messageId;
+    var cached = cache.get(cacheKey);
+
+    if (cached) {
+      console.log("Returning cached result for: " + messageId);
+      var cachedResult = JSON.parse(cached);
+      return [buildAnalysisCard(cachedResult, messageId)];
+    }
+
     var emailPayload = extractEmailData(messageId);
+
+    var logPayload = {
+      ...emailPayload,
+      body_html: emailPayload.body_html && emailPayload.body_html.length > 50
+        ? emailPayload.body_html.slice(0, 50) + "..."
+        : emailPayload.body_html
+    };
+    console.log("emailPayload:", JSON.stringify(logPayload, null, 2));
+
     var analysisResult = analyzeEmail(emailPayload);
     console.log("Analysis complete — verdict: " + analysisResult.verdict + ", score: " + analysisResult.score);
+
+    cache.put(cacheKey, JSON.stringify(analysisResult), 120);
 
     return [buildAnalysisCard(analysisResult, messageId)];
   } catch (error) {

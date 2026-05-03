@@ -30,6 +30,8 @@ function buildAnalysisCard(result, messageId) {
     cardBuilder.addSection(buildScopeSection(result.scope));
   }
 
+  cardBuilder.addSection(buildReanalyzeSection(messageId));
+
   return cardBuilder.build();
 }
 
@@ -88,6 +90,7 @@ function buildSignalWidget(signal) {
   return CardService.newDecoratedText()
     .setTopLabel(categoryLabel + "  ·  " + severityLabel)
     .setText(signal.evidence)
+    .setWrapText(true)
     .setBottomLabel(contribution);
 }
 
@@ -104,6 +107,7 @@ function buildBlindSpotsSection(blindSpots) {
     section.addWidget(
       CardService.newDecoratedText()
         .setText(blindSpot.risk_note)
+        .setWrapText(true)
         .setBottomLabel(blindSpot.reason)
     );
   });
@@ -152,6 +156,22 @@ function formatScopeLines(scope) {
   );
 
   return lines;
+}
+
+function buildReanalyzeSection(messageId) {
+  var section = CardService.newCardSection();
+
+  var action = CardService.newAction()
+    .setFunctionName("onReanalyze")
+    .setParameters({ messageId: messageId });
+
+  section.addWidget(
+    CardService.newTextButton()
+      .setText("↻ Re-analyze")
+      .setOnClickAction(action)
+  );
+
+  return section;
 }
 
 /**
