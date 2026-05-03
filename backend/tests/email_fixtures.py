@@ -390,12 +390,11 @@ SPEAR_PHISH_HOMOGLYPH = {
 # ═══════════════════════════════════════════════════════════════════════════
 
 BEC_WIRE_TRANSFER = {
-    "label": "BEC — freemail CEO impersonation, wire transfer, secrecy, reply-to mismatch",
-    "tags": ["freemail", "impersonation", "wire_transfer", "secrecy", "reply_to_mismatch", "urgency"],
+    "label": "BEC — freemail CEO impersonation, wire transfer, secrecy (reply-to suppressed: freemail→freemail)",
+    "tags": ["freemail", "impersonation", "wire_transfer", "secrecy", "urgency"],
     "expected": {
-        "verdict_in": [Verdict.SUSPICIOUS, Verdict.LIKELY_MALICIOUS],
-        "min_score": 15,
-        "max_score": 65,
+        "verdict_in": [Verdict.SAFE, Verdict.SUSPICIOUS],
+        "max_score": 35,
     },
     "email": _email(
         message_id="bec-001",

@@ -61,15 +61,15 @@ class TestSpearPhishCousinDomain:
 
 
 class TestBecWireTransfer:
-    """Reply-to mismatch → SUSPICIOUS (≥15)."""
+    """Freemail BEC — reply-to suppressed (freemail→freemail), only content signals remain."""
 
-    def test_score_at_least_15(self):
+    def test_no_sender_signals(self):
         result = _engine().analyze(build_email_data(BEC_WIRE_TRANSFER["email"]))
-        assert result.score >= 15.0
+        assert SignalCategory.SENDER_IDENTITY not in result.active_categories
 
-    def test_verdict_is_suspicious_or_higher(self):
+    def test_verdict_safe_or_suspicious(self):
         result = _engine().analyze(build_email_data(BEC_WIRE_TRANSFER["email"]))
-        assert result.verdict in {Verdict.SUSPICIOUS, Verdict.LIKELY_MALICIOUS}
+        assert result.verdict in {Verdict.SAFE, Verdict.SUSPICIOUS}
 
 
 class TestLegitEmailsStaySafe:

@@ -63,12 +63,15 @@ These indicators examine who is sending and whether the identity is deceptive, i
 
 | ID | Indicator | What it detects | Severity | Signal strength | FP risk | Implementation notes |
 |---|---|---|---|---|---|---|
-| **SENDER-1** | Cousin/lookalike domain | `paypa1.com`, `arnazon.com` — visually similar to a known brand | CRITICAL | Very strong — proves impersonation intent | Very low | Compare sender domain against a curated brand list using edit distance (Levenshtein) and character substitution patterns (1↔l, rn↔m, 0↔o). Threshold: distance ≤ 2 from a known brand |
+| **SENDER-1** | Cousin/lookalike domain | `paypa1.com`, `arnazon.com` — sender domain visually similar to a known brand | CRITICAL | Very strong — proves impersonation intent | Very low | Compare sender domain segments against a curated brand list using edit distance (Levenshtein) and character substitution patterns (1↔l, rn↔m, 0↔o). Domain-driven only — does not depend on display name. Threshold: distance ≤ 2 from a known brand |
 | **SENDER-2** | Free provider with org display name | "Bank of America" \<boa.security@gmail.com\> | MEDIUM | Moderate | Moderate — individuals legitimately use free email with business names | Check if From domain is a known free provider (gmail, yahoo, outlook, protonmail) while display name contains organizational keywords |
 | **SENDER-3** | From ≠ Reply-To mismatch | Response directed to a different address | HIGH | Strong | Moderate — legit mailing lists sometimes use different Reply-To | Compare From address domain against Reply-To address domain. Same domain = benign; different domain = signal |
 | **SENDER-4** | Return-Path ≠ From domain | Bounce address points to a different domain than the sender | MEDIUM | Moderate | Moderate — ESPs (SendGrid, SES) use their own Return-Path | Flag when Return-Path domain differs from From domain AND Return-Path domain is not a known ESP |
+| **SENDER-5** | Display name impersonation | "PayPal Security" \<user@random.com\> — display name claims a brand the domain doesn't own | HIGH | Strong — display name is the first thing users see | Low | Extract identity tokens from display name, match against curated brand list. If matched brand's legitimate domains don't include the sender domain, flag. Defers to SENDER-1: if cousin domain already detected, this signal is suppressed to avoid double-counting |
 
-**Why cousin domain is CRITICAL**: Unlike authentication failures (which could be misconfiguration), a cousin domain like `paypa1-support.com` is almost never accidental. It represents deliberate, premeditated impersonation. A single cousin domain detection should push the score into LIKELY_MALICIOUS territory on its own (CRITICAL = 35 base points, threshold = 35).
+**Why cousin domain is CRITICAL**: Unlike authentication failures (which could be misconfiguration), a cousin domain like `paypa1-support.com` is almost never accidental. It represents deliberate, premeditated impersonation — the attacker registered lookalike infrastructure. A single cousin domain detection should push the score into LIKELY_MALICIOUS territory on its own (CRITICAL = 35 base points, threshold = 35).
+
+**Why display name impersonation is HIGH, not CRITICAL**: Setting a display name to "PayPal" costs nothing — any mail client can do it. It's strong evidence of deception but weaker than cousin domain infrastructure. When both are present, only the cousin domain fires (the stronger signal subsumes the weaker one).
 
 ### URL_STRUCTURE category
 
