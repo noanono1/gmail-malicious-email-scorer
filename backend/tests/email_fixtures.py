@@ -39,11 +39,14 @@ def build_email_data(fixture: dict[str, Any]) -> EmailData:
 
     return EmailData(
         message_id=fixture["message_id"],
-        sender=fixture["sender"],
+        sender_address=fixture["sender_address"],
+        sender_display_name=fixture.get("sender_display_name", ""),
         recipient=fixture["recipient"],
         subject=fixture["subject"],
         body_text=fixture.get("body_text", ""),
         body_html=fixture.get("body_html", ""),
+        reply_to_address=fixture.get("reply_to_address", ""),
+        return_path_address=fixture.get("return_path_address", ""),
         headers=EmailHeaders(header_pairs),
         attachments=attachments,
         date=date,
@@ -57,23 +60,29 @@ def build_email_data(fixture: dict[str, Any]) -> EmailData:
 def _email(
     *,
     message_id: str,
-    sender: str,
+    sender_address: str,
+    sender_display_name: str = "",
     recipient: str = "user@example.com",
     subject: str = "",
     date: str = "2026-05-01T12:00:00+00:00",
     body_text: str = "",
     body_html: str = "",
+    reply_to_address: str = "",
+    return_path_address: str = "",
     headers: list[dict[str, str]] | None = None,
     attachments: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     email: dict[str, Any] = {
         "message_id": message_id,
-        "sender": sender,
+        "sender_address": sender_address,
+        "sender_display_name": sender_display_name,
         "recipient": recipient,
         "subject": subject,
         "date": date,
         "body_text": body_text,
         "body_html": body_html,
+        "reply_to_address": reply_to_address,
+        "return_path_address": return_path_address,
         "headers": headers or [],
     }
     if attachments:
@@ -94,7 +103,7 @@ MASS_PHISHING_PAYPAL = {
     },
     "email": _email(
         message_id="phish-001",
-        sender="security@paypa1-support.com",
+        sender_address="security@paypa1-support.com",
         recipient="victim@example.com",
         subject="Your account has been limited - Immediate action required",
         date="2026-05-01T10:00:00+00:00",
@@ -130,8 +139,8 @@ MASS_PHISHING_PAYPAL = {
                 "mx.example.com; spf=fail smtp.mailfrom=paypa1-support.com; "
                 "dkim=fail header.d=paypa1-support.com; dmarc=fail header.from=paypa1-support.com"
             )},
-            {"name": "Return-Path", "value": "bounce-999@cheap-mailer.xyz"},
         ],
+        return_path_address="bounce-999@cheap-mailer.xyz",
     ),
 }
 
@@ -144,7 +153,7 @@ MASS_PHISHING_MICROSOFT = {
     },
     "email": _email(
         message_id="phish-002",
-        sender="admin@micros0ft-365.com",
+        sender_address="admin@micros0ft-365.com",
         recipient="employee@company.com",
         subject="[Action Required] Your password expires today",
         date="2026-05-01T07:30:00+00:00",
@@ -174,8 +183,8 @@ MASS_PHISHING_MICROSOFT = {
                 "mx.company.com; spf=fail smtp.mailfrom=micros0ft-365.com; "
                 "dkim=none; dmarc=fail header.from=micros0ft-365.com"
             )},
-            {"name": "Return-Path", "value": "bounce@micros0ft-365.com"},
         ],
+        return_path_address="bounce@micros0ft-365.com",
     ),
 }
 
@@ -188,7 +197,7 @@ PHISHING_BANK_HTML_FORM = {
     },
     "email": _email(
         message_id="phish-003",
-        sender="alerts@secure-bankofamerica.com",
+        sender_address="alerts@secure-bankofamerica.com",
         recipient="customer@example.com",
         subject="Verify your identity to restore access",
         date="2026-05-01T13:00:00+00:00",
@@ -227,7 +236,7 @@ PHISHING_HIDDEN_URL = {
     },
     "email": _email(
         message_id="phish-004",
-        sender="noreply@app1e-id.support",
+        sender_address="noreply@app1e-id.support",
         recipient="target@example.com",
         subject="Your Apple ID was used to sign in to a new device",
         date="2026-05-01T15:20:00+00:00",
@@ -268,7 +277,7 @@ SPEAR_PHISH_COUSIN_DOMAIN = {
     },
     "email": _email(
         message_id="spear-001",
-        sender="account-update@arnazon.com",
+        sender_address="account-update@arnazon.com",
         recipient="employee@targetcorp.com",
         subject="Action required: verify your payment method",
         date="2026-05-01T11:15:00+00:00",
@@ -302,8 +311,8 @@ SPEAR_PHISH_COUSIN_DOMAIN = {
                 "mx.targetcorp.com; spf=pass smtp.mailfrom=arnazon.com; "
                 "dkim=pass header.d=arnazon.com; dmarc=pass header.from=arnazon.com"
             )},
-            {"name": "Return-Path", "value": "bounce@arnazon.com"},
         ],
+        return_path_address="bounce@arnazon.com",
     ),
 }
 
@@ -316,7 +325,7 @@ SPEAR_PHISH_THREAD_HIJACK = {
     },
     "email": _email(
         message_id="spear-002",
-        sender="partner@supp1ier-corp.com",
+        sender_address="partner@supp1ier-corp.com",
         recipient="procurement@targetcorp.com",
         subject="RE: Q2 Purchase Order #PO-2026-0892",
         date="2026-05-01T09:45:00+00:00",
@@ -350,7 +359,7 @@ SPEAR_PHISH_HOMOGLYPH = {
     },
     "email": _email(
         message_id="spear-003",
-        sender="it-support@targetcorp.com",
+        sender_address="it-support@targetcorp.com",
         recipient="employee@targetcorp.com",
         subject="IT Security: mandatory credential rotation",
         date="2026-05-01T08:00:00+00:00",
@@ -388,7 +397,7 @@ BEC_WIRE_TRANSFER = {
     },
     "email": _email(
         message_id="bec-001",
-        sender="john.smith.ceo@gmail.com",
+        sender_address="john.smith.ceo@gmail.com",
         recipient="finance@acmecorp.com",
         subject="Urgent wire transfer needed",
         date="2026-05-01T14:00:00+00:00",
@@ -406,7 +415,6 @@ BEC_WIRE_TRANSFER = {
         headers=[
             {"name": "From", "value": "john.smith.ceo@gmail.com"},
             {"name": "To", "value": "finance@acmecorp.com"},
-            {"name": "Reply-To", "value": "john.smith.ceo-payments@protonmail.com"},
             {"name": "Received", "value": (
                 "from mail-sor-f41.google.com (209.85.220.41) "
                 "by mx.acmecorp.com with ESMTPS; 01 May 2026 14:00:00 -0000"
@@ -416,6 +424,7 @@ BEC_WIRE_TRANSFER = {
                 "dkim=pass header.d=gmail.com; dmarc=pass header.from=gmail.com"
             )},
         ],
+        reply_to_address="john.smith.ceo-payments@protonmail.com",
     ),
 }
 
@@ -428,7 +437,7 @@ BEC_GIFT_CARDS = {
     },
     "email": _email(
         message_id="bec-002",
-        sender="sarah.jones.vp@outlook.com",
+        sender_address="sarah.jones.vp@outlook.com",
         recipient="assistant@acmecorp.com",
         subject="Quick favor — need this done today",
         date="2026-05-01T16:00:00+00:00",
@@ -464,7 +473,7 @@ BEC_PAYROLL_DIVERSION = {
     },
     "email": _email(
         message_id="bec-003",
-        sender="mike.williams.dev@gmail.com",
+        sender_address="mike.williams.dev@gmail.com",
         recipient="hr@acmecorp.com",
         subject="Update my direct deposit info",
         date="2026-05-01T11:30:00+00:00",
@@ -505,7 +514,7 @@ MALWARE_DOUBLE_EXTENSION = {
     },
     "email": _email(
         message_id="malware-001",
-        sender="invoices@billing-dept.xyz",
+        sender_address="invoices@billing-dept.xyz",
         recipient="accounts@targetcorp.com",
         subject="URGENT: Outstanding invoice #INV-2026-0451 attached",
         date="2026-05-01T16:45:00+00:00",
@@ -527,8 +536,8 @@ MALWARE_DOUBLE_EXTENSION = {
                 "mx.targetcorp.com; spf=fail smtp.mailfrom=billing-dept.xyz; "
                 "dkim=none; dmarc=fail header.from=billing-dept.xyz"
             )},
-            {"name": "Return-Path", "value": "noreply@billing-dept.xyz"},
         ],
+        return_path_address="noreply@billing-dept.xyz",
         attachments=[
             {
                 "filename": "invoice_2026_0451.pdf.exe",
@@ -548,7 +557,7 @@ MALWARE_MACRO_DOC = {
     },
     "email": _email(
         message_id="malware-002",
-        sender="scanner@office-docs.net",
+        sender_address="scanner@office-docs.net",
         recipient="employee@targetcorp.com",
         subject="Scanned document from Xerox WorkCentre",
         date="2026-05-01T10:30:00+00:00",
@@ -586,7 +595,7 @@ MALWARE_PASSWORD_PROTECTED_ZIP = {
     },
     "email": _email(
         message_id="malware-003",
-        sender="legal@court-notice-filing.com",
+        sender_address="legal@court-notice-filing.com",
         recipient="defendant@targetcorp.com",
         subject="Court Notice — Case #2026-CV-4521",
         date="2026-05-01T14:30:00+00:00",
@@ -626,7 +635,7 @@ MALWARE_HTML_ATTACHMENT = {
     },
     "email": _email(
         message_id="malware-004",
-        sender="voicemail@unified-comms.net",
+        sender_address="voicemail@unified-comms.net",
         recipient="user@targetcorp.com",
         subject="You have a new voicemail message",
         date="2026-05-01T12:15:00+00:00",
@@ -664,7 +673,7 @@ NIGERIAN_419_SCAM = {
     },
     "email": _email(
         message_id="scam-001",
-        sender="barrister.williams@yahoo.co.uk",
+        sender_address="barrister.williams@yahoo.co.uk",
         recipient="beneficiary@example.com",
         subject="CONFIDENTIAL: USD $12.5 Million Inheritance",
         date="2026-05-01T06:00:00+00:00",
@@ -705,7 +714,7 @@ SEXTORTION_SCAM = {
     },
     "email": _email(
         message_id="scam-002",
-        sender="anonymous_hacker@protonmail.com",
+        sender_address="anonymous_hacker@protonmail.com",
         recipient="victim@example.com",
         subject="I know what you did",
         date="2026-05-01T03:00:00+00:00",
@@ -741,7 +750,7 @@ LOTTERY_SCAM = {
     },
     "email": _email(
         message_id="scam-003",
-        sender="euroMillions-notification@hotmail.com",
+        sender_address="euroMillions-notification@hotmail.com",
         recipient="winner@example.com",
         subject="CONGRATULATIONS! You have won EUR 1,500,000",
         date="2026-05-01T04:15:00+00:00",
@@ -787,7 +796,7 @@ QUISHING_MFA_RESET = {
     },
     "email": _email(
         message_id="quish-001",
-        sender="it-security@targetcorp-sso.com",
+        sender_address="it-security@targetcorp-sso.com",
         recipient="employee@targetcorp.com",
         subject="Action required: re-enroll your MFA device",
         date="2026-05-01T09:00:00+00:00",
@@ -837,7 +846,7 @@ EVASION_HIDDEN_TEXT = {
     },
     "email": _email(
         message_id="evasion-001",
-        sender="newsletter@news-daily.xyz",
+        sender_address="newsletter@news-daily.xyz",
         recipient="reader@example.com",
         subject="Your daily news digest",
         date="2026-05-01T06:30:00+00:00",
@@ -872,7 +881,7 @@ EVASION_DATA_URI = {
     },
     "email": _email(
         message_id="evasion-002",
-        sender="support@cloud-service.net",
+        sender_address="support@cloud-service.net",
         recipient="admin@targetcorp.com",
         subject="Security alert: unusual sign-in activity",
         date="2026-05-01T12:00:00+00:00",
@@ -906,7 +915,7 @@ EVASION_MULTI_LANGUAGE = {
     },
     "email": _email(
         message_id="evasion-003",
-        sender="security@bank-alerts.xyz",
+        sender_address="security@bank-alerts.xyz",
         recipient="user@example.com",
         subject="Важно: Verify your account / Подтвердите аккаунт",
         date="2026-05-01T12:00:00+00:00",
@@ -945,7 +954,7 @@ LEGIT_AMAZON_ORDER = {
     },
     "email": _email(
         message_id="legit-001",
-        sender="ship-confirm@amazon.com",
+        sender_address="ship-confirm@amazon.com",
         recipient="customer@gmail.com",
         subject="Your Amazon.com order #112-9876543-2109876 has shipped",
         date="2026-05-01T08:30:00+00:00",
@@ -971,8 +980,8 @@ LEGIT_AMAZON_ORDER = {
                 "mx.google.com; spf=pass smtp.mailfrom=amazonses.com; "
                 "dkim=pass header.d=amazon.com; dmarc=pass header.from=amazon.com"
             )},
-            {"name": "Return-Path", "value": "0000014f1a2b3c4d-5e6f@amazonses.com"},
         ],
+        return_path_address="0000014f1a2b3c4d-5e6f@amazonses.com",
     ),
 }
 
@@ -985,7 +994,7 @@ LEGIT_MARKETING_NEWSLETTER = {
     },
     "email": _email(
         message_id="legit-002",
-        sender="deals@shop.example.com",
+        sender_address="deals@shop.example.com",
         recipient="subscriber@gmail.com",
         subject="Weekend sale — 20% off everything",
         date="2026-05-01T09:00:00+00:00",
@@ -1008,8 +1017,8 @@ LEGIT_MARKETING_NEWSLETTER = {
                 "mx.google.com; spf=pass smtp.mailfrom=sendgrid.net; "
                 "dkim=pass header.d=shop.example.com; dmarc=pass header.from=shop.example.com"
             )},
-            {"name": "Return-Path", "value": "bounces+abc123@em.sendgrid.net"},
         ],
+        return_path_address="bounces+abc123@em.sendgrid.net",
     ),
 }
 
@@ -1022,7 +1031,7 @@ LEGIT_GITHUB_NOTIFICATION = {
     },
     "email": _email(
         message_id="legit-003",
-        sender="notifications@github.com",
+        sender_address="notifications@github.com",
         recipient="developer@example.com",
         subject="[myorg/myrepo] Fix null pointer in auth middleware (#342)",
         date="2026-05-01T10:00:00+00:00",
@@ -1059,7 +1068,7 @@ LEGIT_PASSWORD_RESET = {
     },
     "email": _email(
         message_id="legit-004",
-        sender="noreply@accounts.google.com",
+        sender_address="noreply@accounts.google.com",
         recipient="user@gmail.com",
         subject="Password reset request for your Google Account",
         date="2026-05-01T11:00:00+00:00",
@@ -1098,7 +1107,7 @@ LEGIT_INTERNAL_MEETING = {
     },
     "email": _email(
         message_id="legit-005",
-        sender="calendar-server@targetcorp.com",
+        sender_address="calendar-server@targetcorp.com",
         recipient="employee@targetcorp.com",
         subject="Invitation: Sprint Planning (Weekly) @ Mon May 5 10:00am",
         date="2026-05-01T08:00:00+00:00",
@@ -1140,7 +1149,7 @@ LEGIT_COLLEAGUE_WITH_ATTACHMENT = {
     },
     "email": _email(
         message_id="legit-006",
-        sender="alice@targetcorp.com",
+        sender_address="alice@targetcorp.com",
         recipient="bob@targetcorp.com",
         subject="Q1 report — final version",
         date="2026-05-01T15:30:00+00:00",
@@ -1179,7 +1188,7 @@ LEGIT_SLACK_NOTIFICATION = {
     },
     "email": _email(
         message_id="legit-007",
-        sender="notification@slack.com",
+        sender_address="notification@slack.com",
         recipient="user@targetcorp.com",
         subject="3 new messages in #engineering",
         date="2026-05-01T13:45:00+00:00",
@@ -1212,7 +1221,7 @@ LEGIT_FREEMAIL_PERSONAL = {
     },
     "email": _email(
         message_id="special-004",
-        sender="jane.doe.42@gmail.com",
+        sender_address="jane.doe.42@gmail.com",
         recipient="friend@example.com",
         subject="That pasta recipe you asked for",
         date="2026-05-01T12:00:00+00:00",
@@ -1250,7 +1259,7 @@ LEGITIMATE_INVOICE_WITH_ATTACHMENT = {
     },
     "email": _email(
         message_id="special-002",
-        sender="invoices@aws.amazon.com",
+        sender_address="invoices@aws.amazon.com",
         recipient="billing@targetcorp.com",
         subject="Your AWS invoice is available — May 2026",
         date="2026-05-01T06:00:00+00:00",
@@ -1298,7 +1307,7 @@ EMPTY_MINIMAL = {
     },
     "email": _email(
         message_id="edge-001",
-        sender="someone@example.com",
+        sender_address="someone@example.com",
         recipient="other@example.com",
         subject="",
         body_text="",
@@ -1319,7 +1328,7 @@ SUBJECT_ONLY_NO_BODY = {
     },
     "email": _email(
         message_id="edge-002",
-        sender="colleague@targetcorp.com",
+        sender_address="colleague@targetcorp.com",
         recipient="other@targetcorp.com",
         subject="Lunch at noon?",
         body_text="",
@@ -1344,7 +1353,7 @@ BENIGN_URGENCY_LEGIT_SENDER = {
     },
     "email": _email(
         message_id="edge-003",
-        sender="ops@targetcorp.com",
+        sender_address="ops@targetcorp.com",
         recipient="oncall@targetcorp.com",
         subject="URGENT: Production database is down",
         date="2026-05-01T02:15:00+00:00",
@@ -1376,7 +1385,7 @@ SPF_SOFTFAIL_LEGIT_CONTENT = {
     },
     "email": _email(
         message_id="edge-005",
-        sender="updates@small-vendor.com",
+        sender_address="updates@small-vendor.com",
         recipient="user@example.com",
         subject="Your subscription renewal confirmation",
         date="2026-05-01T12:00:00+00:00",
@@ -1408,7 +1417,7 @@ VERY_LONG_BODY = {
     },
     "email": _email(
         message_id="edge-006",
-        sender="digest@techcrunch.com",
+        sender_address="digest@techcrunch.com",
         recipient="reader@example.com",
         subject="TechCrunch Daily Digest — May 1, 2026",
         date="2026-05-01T12:00:00+00:00",
@@ -1443,7 +1452,7 @@ MIXED_SIGNALS = {
     },
     "email": _email(
         message_id="edge-007",
-        sender="realcontact@gmail.com",
+        sender_address="realcontact@gmail.com",
         recipient="user@example.com",
         subject="Can you take a look at this ASAP?",
         date="2026-05-01T12:00:00+00:00",
@@ -1476,7 +1485,7 @@ MULTIPLE_RECIPIENTS_BCC = {
     },
     "email": _email(
         message_id="edge-008",
-        sender="promo@unknown-store.xyz",
+        sender_address="promo@unknown-store.xyz",
         recipient="user@example.com",
         subject="Exclusive deal just for you",
         date="2026-05-01T12:00:00+00:00",
@@ -1511,7 +1520,7 @@ CALLBACK_PHISHING = {
     },
     "email": _email(
         message_id="special-001",
-        sender="billing@geek-squad-renewal.com",
+        sender_address="billing@geek-squad-renewal.com",
         recipient="victim@example.com",
         subject="Your Geek Squad subscription ($449.99) has been renewed",
         date="2026-05-01T07:00:00+00:00",
@@ -1547,7 +1556,7 @@ CREDENTIAL_PHISH_OAUTH = {
     },
     "email": _email(
         message_id="special-003",
-        sender="security@docs-google-verify.com",
+        sender_address="security@docs-google-verify.com",
         recipient="user@example.com",
         subject="Important: review document shared with you",
         date="2026-05-01T12:00:00+00:00",

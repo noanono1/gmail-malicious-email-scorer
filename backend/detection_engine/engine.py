@@ -145,9 +145,11 @@ class DetectionEngine:
                 )
             return f"Verdict: {verdict.value}. No threat signals detected."
 
-        findings = "; ".join(
-            f"{s.category.value}: {s.evidence} ({s.severity.value}, "
-            f"+{s.score_contribution:.1f} pts)"
+        header = f"Verdict: {verdict.value}."
+
+        findings = "\n".join(
+            f"• {s.category.value}: {s.evidence} "
+            f"({s.severity.value}, +{s.score_contribution:.1f} pts)"
             for s in top_signals
         )
 
@@ -164,7 +166,7 @@ class DetectionEngine:
             else ""
         )
 
-        return f"Verdict: {verdict.value}. {findings}. {category_note}{blind_note}"
+        return f"{header}\n{findings}\n{category_note}{blind_note}"
 
 
 def _pick_top_signals(signals: list[Signal], count: int) -> tuple[Signal, ...]:

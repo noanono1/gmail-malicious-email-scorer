@@ -11,6 +11,9 @@ function extractEmailData(messageId) {
 
   console.log("Extracted email — attachments: " + attachments.length);
 
+  var replyToRaw = gmailMessage.getReplyTo();
+  var returnPathRaw = gmailMessage.getHeader("Return-Path") || "";
+
   return {
     message_id: messageId,
     sender_address: parsedSender.address,
@@ -19,6 +22,8 @@ function extractEmailData(messageId) {
     subject: subject,
     body_text: gmailMessage.getPlainBody() || "",
     body_html: gmailMessage.getBody() || "",
+    reply_to_address: extractAddress(replyToRaw),
+    return_path_address: extractAddress(returnPathRaw),
     headers: extractSecurityHeaders(gmailMessage),
     attachments: attachments,
     date: gmailMessage.getDate().toISOString(),
@@ -40,17 +45,25 @@ function parseFromField(rawFrom) {
   return { address: rawFrom.trim(), displayName: "" };
 }
 
+/**
+ * Extracts a bare email address from a header value.
+ * "<user@example.com>" → "user@example.com"
+ * "user@example.com"   → "user@example.com"
+ */
+function extractAddress(headerValue) {
+  if (!headerValue) return "";
+  var match = headerValue.match(/<([^>]+)>/);
+  return match ? match[1] : headerValue.trim();
+}
+
 var SECURITY_HEADERS = [
   "Authentication-Results",
   "Received-SPF",
   "DKIM-Signature",
   "ARC-Authentication-Results",
-  "Return-Path",
-  "Reply-To",
   "X-Mailer",
   "X-Originating-IP",
   "Received",
-  "From",
   "To",
   "Message-ID",
   "Content-Type",

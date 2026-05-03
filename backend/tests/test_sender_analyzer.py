@@ -6,10 +6,9 @@ import pytest
 
 from detection_engine.analyzers.sender import (
     SenderAnalyzer,
-    _extract_display_name,
-    _extract_domain,
     _levenshtein,
     _normalize,
+    _sender_domain,
 )
 from detection_engine.domain.email import EmailData, EmailHeaders
 from detection_engine.domain.enums import SignalCategory, SignalSeverity
@@ -26,18 +25,24 @@ from tests.email_fixtures import (
 
 
 def _make_email(
-    sender: str = "test@example.com",
+    sender_address: str = "test@example.com",
+    sender_display_name: str = "",
+    reply_to_address: str = "",
+    return_path_address: str = "",
     headers: list[tuple[str, str]] | None = None,
 ) -> EmailData:
     if headers is None:
-        headers = [("From", sender), ("To", "user@example.com")]
+        headers = [("From", sender_address), ("To", "user@example.com")]
     return EmailData(
         message_id="test-001",
-        sender=sender,
+        sender_address=sender_address,
+        sender_display_name=sender_display_name,
         recipient="user@example.com",
         subject="Test",
         body_text="",
         body_html="",
+        reply_to_address=reply_to_address,
+        return_path_address=return_path_address,
         headers=EmailHeaders(headers),
     )
 
@@ -54,7 +59,7 @@ def analyzer() -> SenderAnalyzer:
 
 class TestCousinDomain:
     def test_paypal_lookalike_with_digit(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender="user@paypa1-support.com")
+        email = _make_email(sender_address="user@paypa1-support.com")
         output = analyzer.analyze(email)
         cousin = [s for s in output.signals if s.id == "cousin_domain"]
         assert len(cousin) == 1
@@ -62,35 +67,35 @@ class TestCousinDomain:
         assert "paypal" in cousin[0].evidence
 
     def test_amazon_lookalike_with_rn(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender="user@arnazon.com")
+        email = _make_email(sender_address="user@arnazon.com")
         output = analyzer.analyze(email)
         cousin = [s for s in output.signals if s.id == "cousin_domain"]
         assert len(cousin) == 1
         assert "amazon" in cousin[0].evidence
 
     def test_legitimate_brand_not_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender="user@paypal.com")
+        email = _make_email(sender_address="user@paypal.com")
         output = analyzer.analyze(email)
         assert not [s for s in output.signals if s.id == "cousin_domain"]
 
     def test_legitimate_subdomain_not_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender="user@mail.paypal.com")
+        email = _make_email(sender_address="user@mail.paypal.com")
         output = analyzer.analyze(email)
         assert not [s for s in output.signals if s.id == "cousin_domain"]
 
     def test_unrelated_domain_not_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender="user@totally-unrelated.com")
+        email = _make_email(sender_address="user@totally-unrelated.com")
         output = analyzer.analyze(email)
         assert not [s for s in output.signals if s.id == "cousin_domain"]
 
     def test_confidence_exact_after_normalization(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender="user@paypa1.com")
+        email = _make_email(sender_address="user@paypa1.com")
         output = analyzer.analyze(email)
         signal = [s for s in output.signals if s.id == "cousin_domain"][0]
         assert signal.confidence == 1.0
 
     def test_only_one_cousin_signal_per_email(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender="user@paypa1.com")
+        email = _make_email(sender_address="user@paypa1.com")
         output = analyzer.analyze(email)
         assert len([s for s in output.signals if s.id == "cousin_domain"]) == 1
 
@@ -103,11 +108,8 @@ class TestCousinDomain:
 class TestFreemailOrgName:
     def test_freemail_with_org_keyword(self, analyzer: SenderAnalyzer):
         email = _make_email(
-            sender="fake@gmail.com",
-            headers=[
-                ("From", '"PayPal Security" <fake@gmail.com>'),
-                ("To", "user@example.com"),
-            ],
+            sender_address="fake@gmail.com",
+            sender_display_name="PayPal Security",
         )
         output = analyzer.analyze(email)
         freemail = [s for s in output.signals if s.id == "freemail_org_name"]
@@ -115,28 +117,22 @@ class TestFreemailOrgName:
         assert freemail[0].severity == SignalSeverity.MEDIUM
 
     def test_freemail_without_display_name(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender="user@gmail.com")
+        email = _make_email(sender_address="user@gmail.com")
         output = analyzer.analyze(email)
         assert not [s for s in output.signals if s.id == "freemail_org_name"]
 
     def test_freemail_with_personal_name(self, analyzer: SenderAnalyzer):
         email = _make_email(
-            sender="john@gmail.com",
-            headers=[
-                ("From", '"John Smith" <john@gmail.com>'),
-                ("To", "user@example.com"),
-            ],
+            sender_address="john@gmail.com",
+            sender_display_name="John Smith",
         )
         output = analyzer.analyze(email)
         assert not [s for s in output.signals if s.id == "freemail_org_name"]
 
     def test_non_freemail_with_org_name(self, analyzer: SenderAnalyzer):
         email = _make_email(
-            sender="user@company.com",
-            headers=[
-                ("From", '"IT Security" <user@company.com>'),
-                ("To", "user@example.com"),
-            ],
+            sender_address="user@company.com",
+            sender_display_name="IT Security",
         )
         output = analyzer.analyze(email)
         assert not [s for s in output.signals if s.id == "freemail_org_name"]
@@ -150,12 +146,8 @@ class TestFreemailOrgName:
 class TestReplyToMismatch:
     def test_different_domain_flagged(self, analyzer: SenderAnalyzer):
         email = _make_email(
-            sender="user@company.com",
-            headers=[
-                ("From", "user@company.com"),
-                ("To", "recipient@example.com"),
-                ("Reply-To", "secret@different.com"),
-            ],
+            sender_address="user@company.com",
+            reply_to_address="secret@different.com",
         )
         output = analyzer.analyze(email)
         mismatch = [s for s in output.signals if s.id == "reply_to_mismatch"]
@@ -164,18 +156,14 @@ class TestReplyToMismatch:
 
     def test_same_domain_not_flagged(self, analyzer: SenderAnalyzer):
         email = _make_email(
-            sender="user@company.com",
-            headers=[
-                ("From", "user@company.com"),
-                ("To", "recipient@example.com"),
-                ("Reply-To", "other@company.com"),
-            ],
+            sender_address="user@company.com",
+            reply_to_address="other@company.com",
         )
         output = analyzer.analyze(email)
         assert not [s for s in output.signals if s.id == "reply_to_mismatch"]
 
     def test_absent_reply_to_not_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender="user@company.com")
+        email = _make_email(sender_address="user@company.com")
         output = analyzer.analyze(email)
         assert not [s for s in output.signals if s.id == "reply_to_mismatch"]
 
@@ -188,12 +176,8 @@ class TestReplyToMismatch:
 class TestReturnPathMismatch:
     def test_different_non_esp_flagged(self, analyzer: SenderAnalyzer):
         email = _make_email(
-            sender="user@company.com",
-            headers=[
-                ("From", "user@company.com"),
-                ("To", "recipient@example.com"),
-                ("Return-Path", "bounce@shady.xyz"),
-            ],
+            sender_address="user@company.com",
+            return_path_address="bounce@shady.xyz",
         )
         output = analyzer.analyze(email)
         rp = [s for s in output.signals if s.id == "return_path_mismatch"]
@@ -202,36 +186,24 @@ class TestReturnPathMismatch:
 
     def test_esp_return_path_not_flagged(self, analyzer: SenderAnalyzer):
         email = _make_email(
-            sender="user@company.com",
-            headers=[
-                ("From", "user@company.com"),
-                ("To", "recipient@example.com"),
-                ("Return-Path", "bounces@em.sendgrid.net"),
-            ],
+            sender_address="user@company.com",
+            return_path_address="bounces@em.sendgrid.net",
         )
         output = analyzer.analyze(email)
         assert not [s for s in output.signals if s.id == "return_path_mismatch"]
 
     def test_amazonses_not_flagged(self, analyzer: SenderAnalyzer):
         email = _make_email(
-            sender="user@amazon.com",
-            headers=[
-                ("From", "user@amazon.com"),
-                ("To", "recipient@example.com"),
-                ("Return-Path", "bounce@amazonses.com"),
-            ],
+            sender_address="user@amazon.com",
+            return_path_address="bounce@amazonses.com",
         )
         output = analyzer.analyze(email)
         assert not [s for s in output.signals if s.id == "return_path_mismatch"]
 
     def test_same_domain_not_flagged(self, analyzer: SenderAnalyzer):
         email = _make_email(
-            sender="user@company.com",
-            headers=[
-                ("From", "user@company.com"),
-                ("To", "recipient@example.com"),
-                ("Return-Path", "noreply@company.com"),
-            ],
+            sender_address="user@company.com",
+            return_path_address="noreply@company.com",
         )
         output = analyzer.analyze(email)
         assert not [s for s in output.signals if s.id == "return_path_mismatch"]
@@ -245,13 +217,9 @@ class TestReturnPathMismatch:
 class TestScoreContribution:
     def test_all_signals_have_zero_contribution(self, analyzer: SenderAnalyzer):
         email = _make_email(
-            sender="user@paypa1.com",
-            headers=[
-                ("From", "user@paypa1.com"),
-                ("To", "recipient@example.com"),
-                ("Reply-To", "secret@evil.com"),
-                ("Return-Path", "bounce@shady.xyz"),
-            ],
+            sender_address="user@paypa1.com",
+            reply_to_address="secret@evil.com",
+            return_path_address="bounce@shady.xyz",
         )
         output = analyzer.analyze(email)
         assert len(output.signals) > 0
@@ -310,17 +278,11 @@ class TestRealFixtures:
 
 
 class TestHelpers:
-    def test_extract_domain_bare(self):
-        assert _extract_domain("user@example.com") == "example.com"
+    def test_sender_domain(self):
+        assert _sender_domain("user@example.com") == "example.com"
 
-    def test_extract_domain_angle_brackets(self):
-        assert _extract_domain("<user@example.com>") == "example.com"
-
-    def test_extract_domain_display_name(self):
-        assert _extract_domain('"Name" <user@example.com>') == "example.com"
-
-    def test_extract_domain_invalid(self):
-        assert _extract_domain("not-an-email") is None
+    def test_sender_domain_empty(self):
+        assert _sender_domain("not-an-email") is None
 
     def test_levenshtein_identical(self):
         assert _levenshtein("paypal", "paypal") == 0
@@ -342,12 +304,3 @@ class TestHelpers:
 
     def test_normalize_digit_zero(self):
         assert _normalize("g00gle") == "google"
-
-    def test_display_name_quoted(self):
-        assert _extract_display_name('"John Smith" <john@x.com>') == "John Smith"
-
-    def test_display_name_unquoted(self):
-        assert _extract_display_name("John Smith <john@x.com>") == "John Smith"
-
-    def test_display_name_bare_email(self):
-        assert _extract_display_name("john@x.com") is None

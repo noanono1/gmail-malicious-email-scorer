@@ -104,24 +104,11 @@ _ESP_DOMAINS: frozenset[str] = frozenset({
 # Parsing helpers
 # ---------------------------------------------------------------------------
 
-_EMAIL_PATTERN = re.compile(r"<?([^<>\s]+@[^<>\s]+)>?")
-_DISPLAY_NAME_PATTERN = re.compile(r'^"?(.+?)"?\s*<[^>]+>$')
-
-
-def _extract_domain(address: str) -> str | None:
-    match = _EMAIL_PATTERN.search(address)
-    if not match:
+def _sender_domain(sender_address: str) -> str | None:
+    _, sep, domain = sender_address.rpartition("@")
+    if not sep:
         return None
-    _, _, domain = match.group(1).rpartition("@")
-    return domain.lower().strip() if domain else None
-
-
-def _extract_display_name(header_value: str) -> str | None:
-    match = _DISPLAY_NAME_PATTERN.match(header_value.strip())
-    if match:
-        name = match.group(1).strip().strip('"')
-        return name if name else None
-    return None
+    return domain.lower() if domain else None
 
 
 def _is_legitimate_domain(domain: str) -> bool:
@@ -189,7 +176,7 @@ class SenderAnalyzer(BaseAnalyzer):
         return SignalCategory.SENDER_IDENTITY
 
     def analyze(self, email: EmailData) -> AnalysisOutput:
-        sender_domain = _extract_domain(email.sender)
+        sender_domain = _sender_domain(email.sender_address)
         if sender_domain is None:
             return AnalysisOutput(signals=(), blind_spots=())
 
@@ -240,12 +227,8 @@ class SenderAnalyzer(BaseAnalyzer):
         if sender_domain not in _FREEMAIL_DOMAINS:
             return
 
-        from_header = email.headers.get("from")
-        if from_header is None:
-            return
-
-        display_name = _extract_display_name(from_header)
-        if display_name is None:
+        display_name = email.sender_display_name
+        if not display_name:
             return
 
         name_words = {w.lower() for w in re.split(r"[\s\-_]+", display_name)}
@@ -266,11 +249,10 @@ class SenderAnalyzer(BaseAnalyzer):
     def _check_reply_to_mismatch(
         self, email: EmailData, sender_domain: str, signals: list[Signal]
     ) -> None:
-        reply_to = email.headers.get("reply-to")
-        if reply_to is None:
+        if not email.reply_to_address:
             return
 
-        reply_domain = _extract_domain(reply_to)
+        reply_domain = _sender_domain(email.reply_to_address)
         if reply_domain is None or reply_domain == sender_domain:
             return
 
@@ -290,11 +272,10 @@ class SenderAnalyzer(BaseAnalyzer):
     def _check_return_path_mismatch(
         self, email: EmailData, sender_domain: str, signals: list[Signal]
     ) -> None:
-        return_path = email.headers.get("return-path")
-        if return_path is None:
+        if not email.return_path_address:
             return
 
-        return_domain = _extract_domain(return_path)
+        return_domain = _sender_domain(email.return_path_address)
         if return_domain is None or return_domain == sender_domain:
             return
 

@@ -24,7 +24,8 @@ def _make_email(auth_results: str | None) -> EmailData:
         header_pairs.append(("Authentication-Results", auth_results))
     return EmailData(
         message_id="test-001",
-        sender="test@example.com",
+        sender_address="test@example.com",
+        sender_display_name="",
         recipient="user@example.com",
         subject="Test",
         body_text="",

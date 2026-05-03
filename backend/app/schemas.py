@@ -43,11 +43,14 @@ class AnalyzeRequest(BaseModel):
     """POST /analyze request body from the Gmail Add-on."""
 
     message_id: str = Field(max_length=256)
-    sender: str = Field(max_length=512)
+    sender_address: str = Field(max_length=256)
+    sender_display_name: str = Field(default="", max_length=512)
     recipient: str = Field(max_length=512)
     subject: str = Field(max_length=2048)
     body_text: str = Field(default="", max_length=262_144)   # 256KB limit
     body_html: str = Field(default="", max_length=262_144)   # 256KB limit
+    reply_to_address: str = Field(default="", max_length=256)
+    return_path_address: str = Field(default="", max_length=256)
     headers: list[HeaderEntry] = Field(
         default_factory=list,
         max_length=200,
@@ -60,11 +63,14 @@ class AnalyzeRequest(BaseModel):
         """Convert to domain dataclass for the engine."""
         return EmailData(
             message_id=self.message_id,
-            sender=self.sender,
+            sender_address=self.sender_address,
+            sender_display_name=self.sender_display_name,
             recipient=self.recipient,
             subject=self.subject,
             body_text=self.body_text,
             body_html=self.body_html,
+            reply_to_address=self.reply_to_address,
+            return_path_address=self.return_path_address,
             headers=EmailHeaders([(header.name, header.value) for header in self.headers]),
             attachments=tuple(
                 Attachment(

@@ -66,11 +66,14 @@ class EmailHeaders:
 @dataclass(frozen=True)
 class EmailData:
     message_id: str
-    sender: str
+    sender_address: str
+    sender_display_name: str
     recipient: str
     subject: str
     body_text: str
     body_html: str
     headers: EmailHeaders
+    reply_to_address: str = ""
+    return_path_address: str = ""
     attachments: tuple[Attachment, ...] = ()
     date: Optional[datetime] = None

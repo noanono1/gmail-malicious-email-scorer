@@ -26,7 +26,8 @@ def _make_email(
 ) -> EmailData:
     return EmailData(
         message_id="test-001",
-        sender="test@example.com",
+        sender_address="test@example.com",
+        sender_display_name="",
         recipient="user@example.com",
         subject=subject,
         body_text=body_text,

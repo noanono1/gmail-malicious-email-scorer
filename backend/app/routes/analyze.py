@@ -13,7 +13,8 @@ logger = structlog.get_logger()
 
 router = APIRouter(tags=["analysis"], dependencies=[Depends(verify_hmac)])
 
-
+# TODO: add safety checks on request size/content to prevent abuse (e.g. DoS with huge emails)
+# TODO: verify the request originates from an active add-on session, not arbitrary callers
 @router.post("/analyze", response_model=AnalyzeResponse)
 async def analyze_email(
     email_request: AnalyzeRequest,
