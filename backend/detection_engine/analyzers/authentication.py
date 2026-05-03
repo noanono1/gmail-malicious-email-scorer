@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import re
 
 from detection_engine.analyzers.base import BaseAnalyzer
@@ -12,13 +11,14 @@ from detection_engine.domain.enums import (
 )
 from detection_engine.domain.signals import BlindSpot, AnalysisOutput, Signal
 
-logger = logging.getLogger(__name__)
-
 _AUTH_METHODS = ("spf", "dkim", "dmarc")
 
-_RESULT_PATTERN = re.compile(
-    r"(?:^|;\s*){method}=(pass|fail|softfail|none|neutral|temperror|permerror)"
-)
+_AUTH_RESULT_PATTERNS: dict[str, re.Pattern[str]] = {
+    method: re.compile(
+        rf"(?:^|;\s*){method}=(pass|fail|softfail|none|neutral|temperror|permerror)"
+    )
+    for method in _AUTH_METHODS
+}
 
 _SEVERITY: dict[str, SignalSeverity] = {
     "spf": SignalSeverity.HIGH,
@@ -76,10 +76,7 @@ class AuthenticationAnalyzer(BaseAnalyzer):
         return AnalysisOutput(signals=tuple(signals), blind_spots=())
 
     def _check_method(self, header_value: str, method: str) -> Signal | None:
-        pattern = re.compile(
-            rf"(?:^|;\s*){method}=(pass|fail|softfail|none|neutral|temperror|permerror)"
-        )
-        match = pattern.search(header_value)
+        match = _AUTH_RESULT_PATTERNS[method].search(header_value)
         if match is None:
             return None
 

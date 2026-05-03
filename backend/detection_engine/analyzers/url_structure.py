@@ -26,6 +26,13 @@ _IPV4_PATTERN = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
 
 _EXCESSIVE_URL_THRESHOLD = 10
 
+_BARE_URL_PATTERN = re.compile(r"https?://[^\s<>\"']+")
+
+
+def _extract_bare_urls(text: str) -> list[tuple[str, str]]:
+    """Extract bare URLs from plain text as (url, '') tuples — no display text."""
+    return [(url, "") for url in _BARE_URL_PATTERN.findall(text)]
+
 
 class _LinkExtractor(HTMLParser):
 
@@ -82,23 +89,28 @@ class UrlStructureAnalyzer(BaseAnalyzer):
         return SignalCategory.URL_STRUCTURE
 
     def analyze(self, email: EmailData) -> AnalysisOutput:
-        if not email.body_html:
-            return AnalysisOutput.empty()
+        html_links: list[tuple[str, str]] = []
+        if email.body_html:
+            extractor = _LinkExtractor()
+            extractor.feed(email.body_html)
+            html_links = extractor.links
 
-        extractor = _LinkExtractor()
-        extractor.feed(email.body_html)
-        links = extractor.links
+        text_links = _extract_bare_urls(email.body_text) if email.body_text else []
 
-        if not links:
+        seen_urls = {href for href, _ in html_links}
+        unique_text_links = [(url, dt) for url, dt in text_links if url not in seen_urls]
+        all_links = html_links + unique_text_links
+
+        if not all_links:
             return AnalysisOutput.empty()
 
         signals: list[Signal] = []
         blind_spots: list[BlindSpot] = []
 
-        self._check_href_display_mismatch(links, signals)
-        self._check_ip_in_url(links, signals)
-        self._check_shortened_urls(links, signals)
-        self._check_excessive_urls(links, signals)
+        self._check_href_display_mismatch(html_links, signals)
+        self._check_ip_in_url(all_links, signals)
+        self._check_shortened_urls(all_links, signals)
+        self._check_excessive_urls(all_links, signals)
 
         blind_spots.append(
             BlindSpot(

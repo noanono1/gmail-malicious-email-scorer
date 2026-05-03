@@ -11,9 +11,11 @@ from __future__ import annotations
 import pytest
 
 from detection_engine import DetectionEngine, Verdict
-from detection_engine.analyzers.body_content import BodyContentAnalyzer
+from detection_engine.analyzers.attachment import AttachmentAnalyzer
 from detection_engine.analyzers.authentication import AuthenticationAnalyzer
+from detection_engine.analyzers.body_content import BodyContentAnalyzer
 from detection_engine.analyzers.sender import SenderAnalyzer
+from detection_engine.analyzers.url_structure import UrlStructureAnalyzer
 
 from tests.email_fixtures import (
     ALL_FIXTURES,
@@ -24,7 +26,13 @@ from tests.email_fixtures import (
 
 def _build_engine() -> DetectionEngine:
     return DetectionEngine(
-        analyzers=[AuthenticationAnalyzer(), SenderAnalyzer(), BodyContentAnalyzer()],
+        analyzers=[
+            AuthenticationAnalyzer(),
+            SenderAnalyzer(),
+            BodyContentAnalyzer(),
+            UrlStructureAnalyzer(),
+            AttachmentAnalyzer(),
+        ],
     )
 
 
@@ -106,8 +114,10 @@ class TestEngineRobustness:
         assert result.verdict in Verdict
 
     @pytest.mark.parametrize("fixture", ALL_FIXTURES, ids=_fixture_id)
-    def test_all_tier1_analyzers_ran(self, fixture):
+    def test_all_analyzers_ran(self, fixture):
         result = ENGINE.analyze(build_email_data(fixture["email"]))
         assert "authentication_analyzer" in result.scope.analyzers_run
         assert "sender_analyzer" in result.scope.analyzers_run
         assert "body_content_analyzer" in result.scope.analyzers_run
+        assert "url_structure_analyzer" in result.scope.analyzers_run
+        assert "attachment_analyzer" in result.scope.analyzers_run

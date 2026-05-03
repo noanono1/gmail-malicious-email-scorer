@@ -1,14 +1,11 @@
 from __future__ import annotations
 
-import logging
 import re
 
 from detection_engine.analyzers.base import BaseAnalyzer
 from detection_engine.domain.email import EmailData
 from detection_engine.domain.enums import SignalCategory, SignalSeverity
 from detection_engine.domain.signals import AnalysisOutput, Signal
-
-logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Brand intelligence — name → legitimate domains owned by that brand

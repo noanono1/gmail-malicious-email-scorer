@@ -552,7 +552,7 @@ MALWARE_MACRO_DOC = {
     "label": "Malware delivery — Word doc with macros, enable content prompt",
     "tags": ["attachment_macro", "auth_fail", "urgency"],
     "expected": {
-        "verdict_in": [Verdict.SUSPICIOUS, Verdict.LIKELY_MALICIOUS],
+        "verdict_in": [Verdict.LIKELY_MALICIOUS, Verdict.MALICIOUS],
         "min_score": 35,
     },
     "email": _email(
@@ -841,7 +841,7 @@ EVASION_HIDDEN_TEXT = {
     "label": "Evasion — CSS hides malicious link, visible text looks benign",
     "tags": ["hidden_text", "auth_fail", "ip_url"],
     "expected": {
-        "verdict_in": [Verdict.SUSPICIOUS, Verdict.LIKELY_MALICIOUS],
+        "verdict_in": [Verdict.LIKELY_MALICIOUS, Verdict.MALICIOUS],
         "min_score": 35,
     },
     "email": _email(

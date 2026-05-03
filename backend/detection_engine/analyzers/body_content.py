@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from html.parser import HTMLParser
 
 from detection_engine.analyzers.base import BaseAnalyzer
 from detection_engine.domain.email import EmailData
@@ -63,6 +64,25 @@ _FORM_PATTERN = re.compile(
 )
 
 
+class _HtmlTextExtractor(HTMLParser):
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._parts: list[str] = []
+
+    def handle_data(self, data: str) -> None:
+        self._parts.append(data)
+
+    def get_text(self) -> str:
+        return " ".join(self._parts)
+
+
+def _strip_html_tags(html: str) -> str:
+    extractor = _HtmlTextExtractor()
+    extractor.feed(html)
+    return extractor.get_text()
+
+
 class BodyContentAnalyzer(BaseAnalyzer):
 
     @property
@@ -74,7 +94,8 @@ class BodyContentAnalyzer(BaseAnalyzer):
         return SignalCategory.BODY_CONTENT
 
     def analyze(self, email: EmailData) -> AnalysisOutput:
-        text = f"{email.subject} {email.body_text}".lower()
+        html_text = _strip_html_tags(email.body_html) if email.body_html else ""
+        text = f"{email.subject} {email.body_text} {html_text}".lower()
         signals: list[Signal] = []
 
         self._check_urgency(text, signals)

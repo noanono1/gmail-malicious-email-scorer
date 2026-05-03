@@ -74,6 +74,9 @@ function onReanalyze(event) {
     var analysisResult = analyzeEmail(emailPayload);
     console.log("Re-analysis complete — verdict: " + analysisResult.verdict);
 
+    var cache = CacheService.getUserCache();
+    cache.put("analysis_" + messageId, JSON.stringify(analysisResult), 120);
+
     var card = buildAnalysisCard(analysisResult, messageId);
     return buildNavigationResponse(card);
   } catch (error) {
