@@ -1,12 +1,12 @@
-"""Integration tests — all Tier 1 analyzers (Header + Sender + Content) through the engine."""
+"""Integration tests — all Tier 1 analyzers (Authentication + Sender + BodyContent) through the engine."""
 
 from __future__ import annotations
 
 import pytest
 
 from detection_engine import DetectionEngine, SignalCategory, Verdict
-from detection_engine.analyzers.content import ContentAnalyzer
-from detection_engine.analyzers.header import HeaderAnalyzer
+from detection_engine.analyzers.body_content import BodyContentAnalyzer
+from detection_engine.analyzers.authentication import AuthenticationAnalyzer
 from detection_engine.analyzers.sender import SenderAnalyzer
 from tests.email_fixtures import (
     ALL_FIXTURES,
@@ -23,7 +23,7 @@ from tests.email_fixtures import (
 
 def _engine() -> DetectionEngine:
     return DetectionEngine(
-        analyzers=[HeaderAnalyzer(), SenderAnalyzer(), ContentAnalyzer()],
+        analyzers=[AuthenticationAnalyzer(), SenderAnalyzer(), BodyContentAnalyzer()],
         intel_sources=[],
     )
 
@@ -41,15 +41,15 @@ class TestMassPhishingFullTier1:
 
     def test_three_active_categories(self):
         result = _engine().analyze(build_email_data(MASS_PHISHING["email"]))
-        assert SignalCategory.AUTHENTICATION in result.categories_active
-        assert SignalCategory.SENDER_IDENTITY in result.categories_active
-        assert SignalCategory.CONTENT in result.categories_active
+        assert SignalCategory.AUTHENTICATION in result.active_categories
+        assert SignalCategory.SENDER_IDENTITY in result.active_categories
+        assert SignalCategory.BODY_CONTENT in result.active_categories
 
     def test_all_three_analyzers_in_scope(self):
         result = _engine().analyze(build_email_data(MASS_PHISHING["email"]))
-        assert "header_analyzer" in result.scope.analyzers_run
+        assert "authentication_analyzer" in result.scope.analyzers_run
         assert "sender_analyzer" in result.scope.analyzers_run
-        assert "content_analyzer" in result.scope.analyzers_run
+        assert "body_content_analyzer" in result.scope.analyzers_run
 
 
 class TestSpearPhishCousinDomain:
@@ -75,10 +75,10 @@ class TestBecWireTransfer:
         result = _engine().analyze(build_email_data(BEC_WIRE_TRANSFER["email"]))
         assert result.verdict in {Verdict.SUSPICIOUS, Verdict.LIKELY_MALICIOUS}
 
-    def test_content_and_sender_categories_active(self):
+    def test_content_and_sender_active_categories(self):
         result = _engine().analyze(build_email_data(BEC_WIRE_TRANSFER["email"]))
-        assert SignalCategory.SENDER_IDENTITY in result.categories_active
-        assert SignalCategory.CONTENT in result.categories_active
+        assert SignalCategory.SENDER_IDENTITY in result.active_categories
+        assert SignalCategory.BODY_CONTENT in result.active_categories
 
 
 class TestLegitEmailsStaySafe:

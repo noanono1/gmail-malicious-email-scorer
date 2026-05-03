@@ -5,7 +5,7 @@ import re
 from detection_engine.analyzers.base import BaseAnalyzer
 from detection_engine.domain.email import EmailData
 from detection_engine.domain.enums import BlindSpotArea, SignalCategory, SignalSeverity
-from detection_engine.domain.signals import BlindSpot, DetectionOutput, Signal
+from detection_engine.domain.signals import BlindSpot, AnalysisOutput, Signal
 
 _DANGEROUS_EXTENSIONS: frozenset[str] = frozenset({
     ".exe", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".msi",
@@ -47,9 +47,9 @@ class AttachmentAnalyzer(BaseAnalyzer):
     def category(self) -> SignalCategory:
         return SignalCategory.ATTACHMENT
 
-    def analyze(self, email: EmailData) -> DetectionOutput:
+    def analyze(self, email: EmailData) -> AnalysisOutput:
         if not email.attachments:
-            return DetectionOutput.empty()
+            return AnalysisOutput.empty()
 
         signals: list[Signal] = []
 
@@ -66,7 +66,7 @@ class AttachmentAnalyzer(BaseAnalyzer):
             ),
         )
 
-        return DetectionOutput(signals=tuple(signals), blind_spots=blind_spots)
+        return AnalysisOutput(signals=tuple(signals), blind_spots=blind_spots)
 
     def _check_dangerous_extensions(
         self, email: EmailData, signals: list[Signal]

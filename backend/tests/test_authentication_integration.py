@@ -1,11 +1,11 @@
-"""Integration tests — HeaderAnalyzer through the engine, scoring, and verdict."""
+"""Integration tests — AuthenticationAnalyzer through the engine, scoring, and verdict."""
 
 from __future__ import annotations
 
 import pytest
 
 from detection_engine import DetectionEngine, SignalCategory, Verdict
-from detection_engine.analyzers.header import HeaderAnalyzer
+from detection_engine.analyzers.authentication import AuthenticationAnalyzer
 from tests.email_fixtures import (
     ALL_FIXTURES,
     BEC_WIRE_TRANSFER,
@@ -20,7 +20,7 @@ from tests.email_fixtures import (
 
 
 def _engine() -> DetectionEngine:
-    return DetectionEngine(analyzers=[HeaderAnalyzer()], intel_sources=[])
+    return DetectionEngine(analyzers=[AuthenticationAnalyzer()], intel_sources=[])
 
 
 class TestMassPhishingScoring:
@@ -36,7 +36,7 @@ class TestMassPhishingScoring:
 
     def test_single_active_category(self):
         result = _engine().analyze(build_email_data(MASS_PHISHING["email"]))
-        assert result.categories_active == frozenset({SignalCategory.AUTHENTICATION})
+        assert result.active_categories == frozenset({SignalCategory.AUTHENTICATION})
 
     def test_three_signals_emitted(self):
         result = _engine().analyze(build_email_data(MASS_PHISHING["email"]))
@@ -44,7 +44,7 @@ class TestMassPhishingScoring:
 
     def test_header_analyzer_in_scope(self):
         result = _engine().analyze(build_email_data(MASS_PHISHING["email"]))
-        assert "header_analyzer" in result.scope.analyzers_run
+        assert "authentication_analyzer" in result.scope.analyzers_run
 
 
 class TestLegitEmailsScoreZero:

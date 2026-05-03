@@ -5,7 +5,7 @@ import re
 from detection_engine.analyzers.base import BaseAnalyzer
 from detection_engine.domain.email import EmailData
 from detection_engine.domain.enums import SignalCategory, SignalSeverity
-from detection_engine.domain.signals import DetectionOutput, Signal
+from detection_engine.domain.signals import AnalysisOutput, Signal
 
 # Exact-match phrase lists work while the list stays under ~50 entries per
 # category. Beyond that, migrate to compiled regex patterns or a lightweight
@@ -63,17 +63,17 @@ _FORM_PATTERN = re.compile(
 )
 
 
-class ContentAnalyzer(BaseAnalyzer):
+class BodyContentAnalyzer(BaseAnalyzer):
 
     @property
     def name(self) -> str:
-        return "content_analyzer"
+        return "body_content_analyzer"
 
     @property
     def category(self) -> SignalCategory:
-        return SignalCategory.CONTENT
+        return SignalCategory.BODY_CONTENT
 
-    def analyze(self, email: EmailData) -> DetectionOutput:
+    def analyze(self, email: EmailData) -> AnalysisOutput:
         text = f"{email.subject} {email.body_text}".lower()
         signals: list[Signal] = []
 
@@ -81,7 +81,7 @@ class ContentAnalyzer(BaseAnalyzer):
         self._check_sensitive_data_request(text, signals)
         self._check_html_form(email.body_html, signals)
 
-        return DetectionOutput(signals=tuple(signals), blind_spots=())
+        return AnalysisOutput(signals=tuple(signals), blind_spots=())
 
     def _check_urgency(self, text: str, signals: list[Signal]) -> None:
         matched = [phrase for phrase in _URGENCY_PHRASES if phrase in text]
@@ -91,7 +91,7 @@ class ContentAnalyzer(BaseAnalyzer):
         signals.append(
             Signal(
                 id="urgency_language",
-                category=SignalCategory.CONTENT,
+                category=SignalCategory.BODY_CONTENT,
                 severity=SignalSeverity.MEDIUM,
                 confidence=min(0.5 + 0.15 * len(matched), 1.0),
                 evidence=f"Urgency/threat language detected: {', '.join(repr(p) for p in matched)}",
@@ -108,7 +108,7 @@ class ContentAnalyzer(BaseAnalyzer):
         signals.append(
             Signal(
                 id="sensitive_data_request",
-                category=SignalCategory.CONTENT,
+                category=SignalCategory.BODY_CONTENT,
                 severity=SignalSeverity.HIGH,
                 confidence=min(0.6 + 0.2 * len(matched), 1.0),
                 evidence=f"Sensitive data request detected: {', '.join(repr(p) for p in matched)}",
@@ -123,7 +123,7 @@ class ContentAnalyzer(BaseAnalyzer):
             signals.append(
                 Signal(
                     id="html_form_in_body",
-                    category=SignalCategory.CONTENT,
+                    category=SignalCategory.BODY_CONTENT,
                     severity=SignalSeverity.CRITICAL,
                     confidence=1.0,
                     evidence="HTML <form> with input fields found in email body",

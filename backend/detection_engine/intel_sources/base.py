@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 from detection_engine.domain.email import EmailData
 from detection_engine.domain.enums import IntelSourceType
-from detection_engine.domain.signals import DetectionOutput
+from detection_engine.domain.signals import AnalysisOutput
 
 
 class ThreatIntelSource(ABC):
@@ -16,7 +16,7 @@ class ThreatIntelSource(ABC):
     @property
     @abstractmethod
     def source_type(self) -> IntelSourceType:
-        """Identifies this source for ScopeInfo and blind-spot reporting."""
+        """Identifies this source for AnalysisScope and blind-spot reporting."""
 
     @abstractmethod
     def is_available(self) -> bool:
@@ -26,9 +26,9 @@ class ThreatIntelSource(ABC):
         an INTEL_SOURCE_UNAVAILABLE blind spot."""
 
     @abstractmethod
-    def query(self, email: EmailData) -> DetectionOutput:
+    def query(self, email: EmailData) -> AnalysisOutput:
         """Run the external lookup. Network calls are permitted here, and only here.
 
         Must time out. Must catch its own transport errors and return
-        DetectionOutput with an INTEL_SOURCE_UNAVAILABLE blind spot
+        AnalysisOutput with an INTEL_SOURCE_UNAVAILABLE blind spot
         rather than raising."""

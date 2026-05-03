@@ -12,9 +12,9 @@ from detection_engine.domain.enums import (
     Verdict,
 )
 from detection_engine.domain.signals import BlindSpot, Signal
-from detection_engine.domain.verdict import AnalysisResult, ScopeInfo
+from detection_engine.domain.verdict import AnalysisResult, AnalysisScope
 from detection_engine.intel_sources.base import ThreatIntelSource
-from detection_engine.scoring import classify, score
+from detection_engine.scoring import classify_verdict, score_signals
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ _CATEGORY_CRASH_BLIND_SPOT_AREA: dict[SignalCategory, BlindSpotArea] = {
     SignalCategory.AUTHENTICATION: BlindSpotArea.AUTHENTICATION_HEADERS,
     SignalCategory.SENDER_IDENTITY: BlindSpotArea.AUTHENTICATION_HEADERS,
     SignalCategory.URL_STRUCTURE: BlindSpotArea.URL_DESTINATION,
-    SignalCategory.CONTENT: BlindSpotArea.HTML_RENDERING,
+    SignalCategory.BODY_CONTENT: BlindSpotArea.HTML_RENDERING,
     SignalCategory.ATTACHMENT: BlindSpotArea.ATTACHMENT_CONTENT,
 }
 
@@ -54,14 +54,14 @@ class DetectionEngine:
         self._run_analyzers(email, collected_signals, collected_blind_spots)
         intel_sources_executed = self._run_intel_sources(email, collected_signals, collected_blind_spots)
 
-        final_score, active_categories = score(collected_signals)
-        verdict = classify(final_score)
+        final_score, active_categories = score_signals(collected_signals)
+        verdict = classify_verdict(final_score)
 
         top_signals = _pick_top_signals(collected_signals, count=3)
         signals = tuple(collected_signals)
         blind_spots = tuple(collected_blind_spots)
 
-        scope = ScopeInfo(
+        scope = AnalysisScope(
             analyzers_run=tuple(a.name for a in self._analyzers),
             intel_sources_run=tuple(intel_sources_executed),
             has_html=bool(email.body_html),
@@ -76,7 +76,7 @@ class DetectionEngine:
             score=final_score,
             signals=signals,
             top_signals=top_signals,
-            categories_active=active_categories,
+            active_categories=active_categories,
             blind_spots=blind_spots,
             scope=scope,
             explanation=explanation,

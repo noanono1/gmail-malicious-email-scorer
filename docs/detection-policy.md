@@ -83,7 +83,7 @@ These indicators analyze links in the email body without following them.
 
 **Why URL mismatch is CRITICAL**: This is the single strongest phishing indicator. When a link displays "www.paypal.com" but the href points to an IP address or unrelated domain, there is probably no innocent explanation. Combined with a cousin domain (SENDER-1), this produces convergent evidence across two categories, triggering the cross-category boost.
 
-### CONTENT category
+### BODY_CONTENT category
 
 These indicators analyze the textual content for manipulation patterns.
 
@@ -169,7 +169,7 @@ SENDER_IDENTITY:
 URL_STRUCTURE:
   IP in URL      → HIGH    (22.0) ÷ 1.6^0 = 22.0
 
-CONTENT:
+BODY_CONTENT:
   Urgency        → MEDIUM  (12.0) ÷ 1.6^0 = 12.0
 
 Raw total = 50.0 + 35.0 + 22.0 + 12.0 = 119.0

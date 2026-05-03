@@ -11,8 +11,8 @@ from __future__ import annotations
 import pytest
 
 from detection_engine import DetectionEngine, Verdict
-from detection_engine.analyzers.content import ContentAnalyzer
-from detection_engine.analyzers.header import HeaderAnalyzer
+from detection_engine.analyzers.body_content import BodyContentAnalyzer
+from detection_engine.analyzers.authentication import AuthenticationAnalyzer
 from detection_engine.analyzers.sender import SenderAnalyzer
 
 from tests.email_fixtures import (
@@ -24,7 +24,7 @@ from tests.email_fixtures import (
 
 def _build_engine() -> DetectionEngine:
     return DetectionEngine(
-        analyzers=[HeaderAnalyzer(), SenderAnalyzer(), ContentAnalyzer()],
+        analyzers=[AuthenticationAnalyzer(), SenderAnalyzer(), BodyContentAnalyzer()],
     )
 
 
@@ -108,6 +108,6 @@ class TestEngineRobustness:
     @pytest.mark.parametrize("fixture", ALL_FIXTURES, ids=_fixture_id)
     def test_all_tier1_analyzers_ran(self, fixture):
         result = ENGINE.analyze(build_email_data(fixture["email"]))
-        assert "header_analyzer" in result.scope.analyzers_run
+        assert "authentication_analyzer" in result.scope.analyzers_run
         assert "sender_analyzer" in result.scope.analyzers_run
-        assert "content_analyzer" in result.scope.analyzers_run
+        assert "body_content_analyzer" in result.scope.analyzers_run

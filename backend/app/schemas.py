@@ -94,7 +94,7 @@ class BlindSpotResponse(BaseModel):
     risk_note: str
 
 
-class ScopeResponse(BaseModel):
+class AnalysisScopeResponse(BaseModel):
     analyzers_run: list[str]
     intel_sources_run: list[IntelSourceType]
     has_html: bool
@@ -108,9 +108,9 @@ class AnalyzeResponse(BaseModel):
     explanation: str
     signals: list[SignalResponse]
     top_signals: list[SignalResponse]
-    categories_active: list[SignalCategory]
+    active_categories: list[SignalCategory]
     blind_spots: list[BlindSpotResponse]
-    scope: ScopeResponse
+    scope: AnalysisScopeResponse
 
     @classmethod
     def from_domain(cls, analysis_result: AnalysisResult) -> AnalyzeResponse:
@@ -132,7 +132,7 @@ class AnalyzeResponse(BaseModel):
             explanation=analysis_result.explanation,
             signals=[_signal_to_response(signal) for signal in analysis_result.signals],
             top_signals=[_signal_to_response(signal) for signal in analysis_result.top_signals],
-            categories_active=list(analysis_result.categories_active),
+            active_categories=list(analysis_result.active_categories),
             blind_spots=[
                 BlindSpotResponse(
                     area=blind_spot.area,
@@ -141,7 +141,7 @@ class AnalyzeResponse(BaseModel):
                 )
                 for blind_spot in analysis_result.blind_spots
             ],
-            scope=ScopeResponse(
+            scope=AnalysisScopeResponse(
                 analyzers_run=list(analysis_result.scope.analyzers_run),
                 intel_sources_run=list(analysis_result.scope.intel_sources_run),
                 has_html=analysis_result.scope.has_html,

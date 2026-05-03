@@ -6,8 +6,8 @@ from detection_engine.domain.enums import (
     SignalSeverity,
     Verdict,
 )
-from detection_engine.domain.signals import BlindSpot, DetectionOutput, Signal
-from detection_engine.domain.verdict import AnalysisResult, ScopeInfo
+from detection_engine.domain.signals import AnalysisOutput, BlindSpot, Signal
+from detection_engine.domain.verdict import AnalysisResult, AnalysisScope
 from detection_engine.engine import DetectionEngine
 
 __all__ = [
@@ -16,13 +16,13 @@ __all__ = [
     "BlindSpot",
     "BlindSpotArea",
     "DetectionEngine",
-    "DetectionOutput",
+    "AnalysisOutput",
     "EmailData",
     "EmailHeaders",
     "IntelSourceType",
     "Signal",
     "SignalCategory",
     "SignalSeverity",
-    "ScopeInfo",
+    "AnalysisScope",
     "Verdict",
 ]

@@ -6,7 +6,7 @@ import re
 from detection_engine.analyzers.base import BaseAnalyzer
 from detection_engine.domain.email import EmailData
 from detection_engine.domain.enums import SignalCategory, SignalSeverity
-from detection_engine.domain.signals import DetectionOutput, Signal
+from detection_engine.domain.signals import AnalysisOutput, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -188,10 +188,10 @@ class SenderAnalyzer(BaseAnalyzer):
     def category(self) -> SignalCategory:
         return SignalCategory.SENDER_IDENTITY
 
-    def analyze(self, email: EmailData) -> DetectionOutput:
+    def analyze(self, email: EmailData) -> AnalysisOutput:
         sender_domain = _extract_domain(email.sender)
         if sender_domain is None:
-            return DetectionOutput(signals=(), blind_spots=())
+            return AnalysisOutput(signals=(), blind_spots=())
 
         signals: list[Signal] = []
 
@@ -200,7 +200,7 @@ class SenderAnalyzer(BaseAnalyzer):
         self._check_reply_to_mismatch(email, sender_domain, signals)
         self._check_return_path_mismatch(email, sender_domain, signals)
 
-        return DetectionOutput(signals=tuple(signals), blind_spots=())
+        return AnalysisOutput(signals=tuple(signals), blind_spots=())
 
     def _check_cousin_domain(
         self, sender_domain: str, signals: list[Signal]

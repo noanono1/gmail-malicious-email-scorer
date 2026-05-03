@@ -7,7 +7,7 @@ from urllib.parse import urlparse
 from detection_engine.analyzers.base import BaseAnalyzer
 from detection_engine.domain.email import EmailData
 from detection_engine.domain.enums import BlindSpotArea, SignalCategory, SignalSeverity
-from detection_engine.domain.signals import BlindSpot, DetectionOutput, Signal
+from detection_engine.domain.signals import BlindSpot, AnalysisOutput, Signal
 
 _SHORTENER_DOMAINS: frozenset[str] = frozenset({
     "bit.ly",
@@ -71,26 +71,26 @@ def _is_ip_address(host: str) -> bool:
     return False
 
 
-class UrlAnalyzer(BaseAnalyzer):
+class UrlStructureAnalyzer(BaseAnalyzer):
 
     @property
     def name(self) -> str:
-        return "url_analyzer"
+        return "url_structure_analyzer"
 
     @property
     def category(self) -> SignalCategory:
         return SignalCategory.URL_STRUCTURE
 
-    def analyze(self, email: EmailData) -> DetectionOutput:
+    def analyze(self, email: EmailData) -> AnalysisOutput:
         if not email.body_html:
-            return DetectionOutput.empty()
+            return AnalysisOutput.empty()
 
         extractor = _LinkExtractor()
         extractor.feed(email.body_html)
         links = extractor.links
 
         if not links:
-            return DetectionOutput.empty()
+            return AnalysisOutput.empty()
 
         signals: list[Signal] = []
         blind_spots: list[BlindSpot] = []
@@ -108,7 +108,7 @@ class UrlAnalyzer(BaseAnalyzer):
             )
         )
 
-        return DetectionOutput(signals=tuple(signals), blind_spots=tuple(blind_spots))
+        return AnalysisOutput(signals=tuple(signals), blind_spots=tuple(blind_spots))
 
     def _check_href_display_mismatch(
         self, links: list[tuple[str, str]], signals: list[Signal]

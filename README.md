@@ -62,10 +62,10 @@ The detection engine (`detection_engine/`) is a pure Python library with zero we
 
 | Analyzer | Category | Signals |
 |---|---|---|
-| **Header** | Authentication | SPF/DKIM/DMARC failures, From/Reply-To mismatch, missing Message-ID, suspicious Received chains |
-| **Sender** | Identity | Freemail from "corporate" senders, cousin/typosquat domains, display-name spoofing, suspicious TLDs |
+| **Authentication** | Authentication | SPF/DKIM/DMARC failures |
+| **Sender** | Sender identity | Freemail from "corporate" senders, cousin/typosquat domains, Reply-To mismatch, Return-Path mismatch |
 | **URL** | URL structure | IP-based URLs, anchor/href mismatch, URL shortener use, excessive link count |
-| **Content** | Language | Urgency/pressure language, credential harvesting phrases, financial manipulation, threat language |
+| **Body content** | Body content | Urgency/pressure language, sensitive data requests, HTML forms with input fields |
 | **Attachment** | Files | Dangerous extensions (.exe, .scr, .js), double extensions (.pdf.exe), macro-enabled Office files, password-protected archive hints |
 
 ### Intel Sources
@@ -215,7 +215,7 @@ python -m pytest tests/ -v
   "score": 87.3,
   "verdict": "malicious",
   "scope": {
-    "analyzers_run": ["header_analyzer", "sender_analyzer", "url_analyzer", "content_analyzer", "attachment_analyzer"],
+    "analyzers_run": ["authentication_analyzer", "sender_analyzer", "url_structure_analyzer", "body_content_analyzer", "attachment_analyzer"],
     "intel_sources_run": ["safe_browsing"],
     "has_html": true,
     "has_attachments": true,
@@ -240,7 +240,7 @@ python -m pytest tests/ -v
     }
   ],
   "top_signals": ["...same structure, top 3 by score_contribution..."],
-  "categories_active": ["authentication", "sender_identity", "url_structure", "content", "attachment"],
+  "active_categories": ["authentication", "sender_identity", "url_structure", "body_content", "attachment"],
   "blind_spots": [
     {
       "area": "attachment_content",

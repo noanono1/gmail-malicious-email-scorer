@@ -20,7 +20,7 @@ class SignalCategory(str, Enum):
     AUTHENTICATION = "authentication"
     SENDER_IDENTITY = "sender_identity"
     URL_STRUCTURE = "url_structure"
-    CONTENT = "content"
+    BODY_CONTENT = "body_content"
     ATTACHMENT = "attachment"
 
 

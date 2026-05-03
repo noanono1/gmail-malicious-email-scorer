@@ -43,7 +43,7 @@ tier whose bound the score meets. Tiers chosen so a typical legitimate email
 lands well below 15 and an obvious phishing campaign lands above 65."""
 
 
-def score(signals: list[Signal]) -> tuple[float, frozenset[SignalCategory]]:
+def score_signals(signals: list[Signal]) -> tuple[float, frozenset[SignalCategory]]:
     """Score a list of signals. Returns (final_score, active_categories).
 
     Mutates each signal's score_contribution in place — this is the one
@@ -84,7 +84,7 @@ def score(signals: list[Signal]) -> tuple[float, frozenset[SignalCategory]]:
     return final_score, active_categories
 
 
-def classify(score_value: float) -> Verdict:
+def classify_verdict(score_value: float) -> Verdict:
     """Return the highest Verdict whose threshold the score meets."""
     for threshold, verdict in VERDICT_THRESHOLDS:
         if score_value >= threshold:

@@ -10,7 +10,7 @@ from detection_engine.domain.enums import (
     SignalCategory,
     SignalSeverity,
 )
-from detection_engine.domain.signals import BlindSpot, DetectionOutput, Signal
+from detection_engine.domain.signals import BlindSpot, AnalysisOutput, Signal
 
 logger = logging.getLogger(__name__)
 
@@ -34,26 +34,26 @@ _CONFIDENCE: dict[str, float] = {
 
 _EVIDENCE_TEMPLATES: dict[str, str] = {
     "spf": "SPF check returned '{result}' for sender domain",
-    "dkim": "DKIM signature {result} for sender domain",
+    "dkim": "DKIM verification returned '{result}' for sender domain",
     "dmarc": "DMARC policy returned '{result}' for sender domain",
 }
 
 
-class HeaderAnalyzer(BaseAnalyzer):
+class AuthenticationAnalyzer(BaseAnalyzer):
 
     @property
     def name(self) -> str:
-        return "header_analyzer"
+        return "authentication_analyzer"
 
     @property
     def category(self) -> SignalCategory:
         return SignalCategory.AUTHENTICATION
 
-    def analyze(self, email: EmailData) -> DetectionOutput:
+    def analyze(self, email: EmailData) -> AnalysisOutput:
         header_value = email.headers.get("authentication-results")
 
         if header_value is None:
-            return DetectionOutput(
+            return AnalysisOutput(
                 signals=(),
                 blind_spots=(
                     BlindSpot(
@@ -73,7 +73,7 @@ class HeaderAnalyzer(BaseAnalyzer):
             if signal is not None:
                 signals.append(signal)
 
-        return DetectionOutput(signals=tuple(signals), blind_spots=())
+        return AnalysisOutput(signals=tuple(signals), blind_spots=())
 
     def _check_method(self, header_value: str, method: str) -> Signal | None:
         pattern = re.compile(
@@ -89,7 +89,7 @@ class HeaderAnalyzer(BaseAnalyzer):
             return None
 
         return Signal(
-            id=f"{method}_fail",
+            id=f"{method}_{result}",
             category=SignalCategory.AUTHENTICATION,
             severity=_SEVERITY[method],
             confidence=_CONFIDENCE[result],

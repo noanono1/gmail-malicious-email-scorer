@@ -33,12 +33,12 @@ class BlindSpot:
 
 
 @dataclass(frozen=True)
-class DetectionOutput:
+class AnalysisOutput:
     """Returned by every analyzer and every threat intel source."""
 
     signals: tuple[Signal, ...]
     blind_spots: tuple[BlindSpot, ...]
 
     @classmethod
-    def empty(cls) -> DetectionOutput:
+    def empty(cls) -> AnalysisOutput:
         return cls(signals=(), blind_spots=())

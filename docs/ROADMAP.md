@@ -16,7 +16,7 @@ End-to-end wiring: Gmail Add-on → Backend → hardcoded SAFE → Card UI.
 | **Gmail Add-on** | `addon/Code.gs`, `EmailExtractor.gs`, `BackendClient.gs`, `CardBuilder.gs` | Extracts email payload (headers, body, attachments), HMAC-signs the request, POSTs to `/analyze`, renders the verdict card |
 | **FastAPI adapter** | `app/main.py`, `routes/analyze.py`, `auth.py`, `config.py`, `schemas.py`, `dependencies.py`, `log_setup.py` | HTTP layer with HMAC auth, Pydantic input validation, structured logging, request middleware |
 | **Detection engine skeleton** | `detection_engine/engine.py`, `scoring.py` | Orchestrator (runs analyzers → intel sources → scoring → verdict), scoring algorithm (severity points, attenuation, category cap, cross-category boost) |
-| **Domain model** | `detection_engine/domain/` — `email.py`, `enums.py`, `signals.py`, `verdict.py` | Frozen dataclasses: `EmailData`, `EmailHeaders` (case-insensitive, multi-value), `Signal`, `BlindSpot`, `DetectionOutput`, `AnalysisResult`, `ScopeInfo` |
+| **Domain model** | `detection_engine/domain/` — `email.py`, `enums.py`, `signals.py`, `verdict.py` | Frozen dataclasses: `EmailData`, `EmailHeaders` (case-insensitive, multi-value), `Signal`, `BlindSpot`, `AnalysisOutput`, `AnalysisResult`, `AnalysisScope` |
 | **ABCs** | `analyzers/base.py`, `intel_sources/base.py` | `BaseAnalyzer` (pure, offline, deterministic) and `ThreatIntelSource` (network-capable, timeout-required) |
 | **Test scaffolding** | `tests/email_fixtures.py`, `tests/test_tier1_detection.py` | 7 email fixtures with scoring contracts, contract tests that import Tier 1 analyzers (will fail until implemented) |
 
@@ -35,7 +35,7 @@ End-to-end wiring: Gmail Add-on → Backend → hardcoded SAFE → Card UI.
 Build three analyzers that cover the highest-value, lowest-FP-risk indicators.
 Success criteria: mass phishing scores ≥65 (MALICIOUS), legitimate Amazon order scores <15 (SAFE).
 
-### 1. HeaderAnalyzer
+### 1. AuthenticationAnalyzer
 
 | | |
 |---|---|
@@ -61,7 +61,7 @@ Implementation order: first, because it's the simplest and unlocks end-to-end sc
 
 Most interview-interesting analyzer: the cousin domain algorithm demonstrates deliberate design thinking.
 
-### 3. ContentAnalyzer
+### 3. BodyContentAnalyzer
 
 | | |
 |---|---|
@@ -96,11 +96,11 @@ Note: `MALWARE_ATTACHMENT` requires Tier 2's AttachmentAnalyzer — expected to 
 
 Add URL and attachment analysis. Full test suite. Demo-ready.
 
-### 4. UrlAnalyzer
+### 4. UrlStructureAnalyzer
 
 | | |
 |---|---|
-| **File** | `detection_engine/analyzers/url.py` |
+| **File** | `detection_engine/analyzers/url_structure.py` |
 | **Category** | URL_STRUCTURE |
 | **Signals** | URL-1 (href ≠ display text → CRITICAL), URL-2 (IP in URL → HIGH), URL-3 (shortened URL → LOW), URL-4 (excessive URL count → INFO) |
 | **Requires** | HTML parsing (`html.parser` or BeautifulSoup) |
@@ -195,8 +195,8 @@ Documented for interview discussion ("what would you add next?").
 
 ```
 Tier 0 — Skeleton               ██████████ DONE
-Tier 1 — Core Analyzers         ░░░░░░░░░░ NEXT  (HeaderAnalyzer, SenderAnalyzer, ContentAnalyzer)
-Tier 2 — Extended + Polish       ░░░░░░░░░░ TODO  (UrlAnalyzer, AttachmentAnalyzer, tests, demo, deploy)
+Tier 1 — Core Analyzers         ░░░░░░░░░░ NEXT  (AuthenticationAnalyzer, SenderAnalyzer, BodyContentAnalyzer)
+Tier 2 — Extended + Polish       ░░░░░░░░░░ TODO  (UrlStructureAnalyzer, AttachmentAnalyzer, tests, demo, deploy)
 Tier 3 — Intel Sources           ░░░░░░░░░░ POST-MVP
 Tier 4 — Future Extensions       ░░░░░░░░░░ OUT OF SCOPE
 ```
@@ -208,7 +208,7 @@ Tier 4 — Future Extensions       ░░░░░░░░░░ OUT OF SCOPE
 | `analyzers/header.py` | Does not exist yet |
 | `analyzers/sender.py` | Does not exist yet |
 | `analyzers/content.py` | Does not exist yet |
-| `analyzers/url.py` | Does not exist yet |
+| `analyzers/url_structure.py` | Does not exist yet |
 | `analyzers/attachment.py` | Does not exist yet |
 | `infrastructure/` | Directory does not exist yet |
 | `app/dependencies.py` | Exists, wires empty analyzer list — needs real analyzers |

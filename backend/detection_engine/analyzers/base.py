@@ -4,7 +4,7 @@ from abc import ABC, abstractmethod
 
 from detection_engine.domain.email import EmailData
 from detection_engine.domain.enums import SignalCategory
-from detection_engine.domain.signals import DetectionOutput
+from detection_engine.domain.signals import AnalysisOutput
 
 
 class BaseAnalyzer(ABC):
@@ -17,7 +17,7 @@ class BaseAnalyzer(ABC):
     @property
     @abstractmethod
     def name(self) -> str:
-        """Stable identifier, e.g. 'header_analyzer'. Used in ScopeInfo."""
+        """Stable identifier, e.g. 'authentication_analyzer'. Used in AnalysisScope."""
 
     @property
     @abstractmethod
@@ -25,9 +25,9 @@ class BaseAnalyzer(ABC):
         """The signal category this analyzer produces."""
 
     @abstractmethod
-    def analyze(self, email: EmailData) -> DetectionOutput:
+    def analyze(self, email: EmailData) -> AnalysisOutput:
         """Inspect the email and return signals and blind spots.
 
         Pure function. No I/O. No exceptions on malformed input — return
-        DetectionOutput.empty() and (optionally) a BlindSpot describing what
+        AnalysisOutput.empty() and (optionally) a BlindSpot describing what
         could not be checked."""

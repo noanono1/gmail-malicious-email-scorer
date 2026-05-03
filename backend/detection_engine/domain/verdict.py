@@ -11,7 +11,7 @@ from detection_engine.domain.signals import BlindSpot, Signal
 
 
 @dataclass(frozen=True)
-class ScopeInfo:
+class AnalysisScope:
     """What ran and what was present."""
 
     analyzers_run: tuple[str, ...]
@@ -27,9 +27,9 @@ class AnalysisResult:
     score: float
     signals: tuple[Signal, ...]
     top_signals: tuple[Signal, ...]
-    categories_active: frozenset[SignalCategory]
+    active_categories: frozenset[SignalCategory]
     blind_spots: tuple[BlindSpot, ...]
-    scope: ScopeInfo
+    scope: AnalysisScope
     explanation: str
 
     def __post_init__(self) -> None:
