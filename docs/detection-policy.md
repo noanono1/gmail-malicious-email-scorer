@@ -101,9 +101,9 @@ These indicators examine attachment metadata without opening or executing files.
 
 | ID | Indicator | What it detects | Severity | Signal strength | FP risk | Implementation notes |
 |---|---|---|---|---|---|---|
-| **ATTACH-1** | Dangerous file extension | .exe, .scr, .bat, .cmd, .ps1, .vbs, .js, .msi | CRITICAL | Very strong — these file types have no legitimate reason to arrive via email in most contexts | Very low | Check attachment filename extension against a curated dangerous-extensions list |
+| **ATTACH-1** | Dangerous file extension | .exe, .scr, .bat, .cmd, .ps1, .vbs, .js, .msi, .com, .pif, .hta, .wsf, .cpl, .reg, .html, .htm | CRITICAL | Very strong — these file types have no legitimate reason to arrive via email in most contexts | Very low | Check attachment filename extension against a curated dangerous-extensions list |
 | **ATTACH-2** | Double extension | `invoice.pdf.exe` — masquerading as a safe file type | CRITICAL | Very strong — always deliberate deception | Very low | Check if filename contains multiple extensions where the final one is dangerous |
-| **ATTACH-3** | Macro-enabled Office format | .docm, .xlsm, .pptm — Office files with macros | HIGH | Strong — macro malware is a primary delivery vector | Moderate — some organizations still use macro-enabled templates | Check extension against macro-enabled Office MIME types |
+| **ATTACH-3** | Macro-enabled Office format | .docm, .xlsm, .pptm, .dotm, .xltm, .potm — Office files with macros | HIGH | Strong — macro malware is a primary delivery vector | Moderate — some organizations still use macro-enabled templates | Check extension against macro-enabled Office MIME types |
 | **ATTACH-4** | Password-protected archive | Encrypted .zip/.rar mentioned in body | HIGH | Strong — used to evade scanning | Moderate — legit confidential docs use this too | Check for archive MIME types combined with body text mentioning "password" near attachment references |
 
 ---
@@ -193,13 +193,14 @@ Verdict = SAFE ✓
 
 Every detection system has known gaps. Ours are documented as `BlindSpot` domain objects and reported alongside verdicts, so the user knows what the system *didn't* check.
 
-| Blind spot | When reported | Risk |
-|---|---|---|
-| `ATTACHMENT_CONTENT` | Email has attachments | We check metadata (extension, MIME) but not file content — a .pdf could contain malicious JavaScript |
-| `URL_DESTINATION` | Email has URLs | We check URL structure but don't follow links — a clean-looking domain could redirect to a phishing page |
-| `EMBEDDED_IMAGE` | Email has inline images | Images could contain QR codes or text designed to bypass text-based analysis |
-| `HTML_RENDERING` | Email has HTML body | We parse HTML structure but don't render it — CSS tricks could hide or show content selectively |
-| `QR_CODE` | Email has images | QR codes in images can encode phishing URLs — undetectable without image processing |
-| `THREAD_HISTORY` | Always | We analyze the single message, not the conversation thread — a reply to a legitimate thread is harder to identify as phishing |
+| Blind spot | When reported | Risk | Status |
+|---|---|---|---|
+| `ATTACHMENT_CONTENT` | Email has attachments | We check metadata (extension, MIME) but not file content — a .pdf could contain malicious JavaScript | Emitted by AttachmentAnalyzer |
+| `URL_DESTINATION` | Email has URLs | We check URL structure but don't follow links — a clean-looking domain could redirect to a phishing page | Emitted by UrlStructureAnalyzer |
+| `AUTHENTICATION_HEADERS` | Authentication-Results header absent | Email authentication status unknown — SPF, DKIM, and DMARC could not be evaluated | Emitted by AuthenticationAnalyzer |
+| `THREAD_HISTORY` | Always | We analyze the single message, not the conversation thread — a reply to a legitimate thread is harder to identify as phishing | Emitted by engine |
+| `EMBEDDED_IMAGE` | Email has inline images or image attachments | Images could contain QR codes or text designed to bypass text-based analysis | Emitted by engine |
+| `QR_CODE` | Email has inline images or image attachments | QR codes in images can encode phishing URLs — undetectable without image processing | Emitted by engine |
+| `HTML_RENDERING` | Email has HTML body | We parse HTML structure but don't render it — CSS tricks could hide or show content selectively | Defined in enum, not yet emitted |
 
 Reporting blind spots is a deliberate design choice: a verdict of SAFE with three blind spots means something different than SAFE with zero. The consumer (Gmail Add-on UI) can display these to help the user make informed decisions.

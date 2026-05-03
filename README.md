@@ -37,8 +37,8 @@ Every result includes the analysis scope, specific findings with evidence, and a
 │  │  │ Attachment       │  │ │
 │  │  └─────────────────┘  │ │
 │  │  ┌─────────────────┐  │ │
-│  │  │   Intel Sources   │  │ │
-│  │  │ Safe Browsing   │  │ │
+│  │  │  Intel Sources   │  │ │
+│  │  │  (planned)       │  │ │
 │  │  └─────────────────┘  │ │
 │  │  Scoring ─► Verdict   │ │
 │  │  Coverage ─► Blind    │ │
@@ -66,15 +66,11 @@ The detection engine (`detection_engine/`) is a pure Python library with zero we
 | **Sender** | Sender identity | Freemail from "corporate" senders, cousin/typosquat domains, Reply-To mismatch, Return-Path mismatch |
 | **URL** | URL structure | IP-based URLs, anchor/href mismatch, URL shortener use, excessive link count |
 | **Body content** | Body content | Urgency/pressure language, sensitive data requests, HTML forms with input fields |
-| **Attachment** | Files | Dangerous extensions (.exe, .scr, .js), double extensions (.pdf.exe), macro-enabled Office files, password-protected archive hints |
+| **Attachment** | Attachment | Dangerous extensions (.exe, .scr, .js), double extensions (.pdf.exe), macro-enabled Office files, password-protected archive hints |
 
 ### Intel Sources
 
-| Provider | Purpose | Fallback |
-|---|---|---|
-| **Google Safe Browsing** | URL reputation from Google's threat database | Analysis proceeds without it; a blind spot is reported |
-
-Intel Sources are injected dependencies. When unavailable, the engine degrades gracefully and the blind spots section reflects what was missed.
+No external intel sources are wired in the current build. The architecture supports them via the `ThreatIntelSource` ABC — Google Safe Browsing is the planned first integration. When an intel source is unavailable, the engine reports a blind spot instead of failing.
 
 ---
 
@@ -85,11 +81,12 @@ Every analysis result includes a blind spots section — runtime-generated decla
 | Condition | Blind Spot | Risk |
 |---|---|---|
 | Email has file attachments | "Attachment content not inspected" | Malicious payloads inside files are not detected; only metadata is analyzed |
-| Body contains `<img>` tags | "Embedded images not analyzed" | Image-based phishing and tracking pixels are not detected |
-| No Safe Browsing API key | "Safe Browsing not queried" | Known malicious URLs will not be flagged — only structural patterns are checked |
-| Email has HTML body | "HTML rendering behavior not simulated" | CSS/JS-based content hiding or redirects are not detected |
+| Email has URLs | "URLs found but not followed" | A clean-looking domain could redirect to a phishing page |
+| Email contains images | "Embedded images not analyzed" | Images may contain text, QR codes, or visual phishing undetectable by text analysis |
+| Authentication-Results header absent | "Authentication status unknown" | SPF, DKIM, and DMARC could not be evaluated |
+| Always | "Single-email analysis only" | Thread context may reveal social engineering patterns |
 
-This means the result is never just "score: 5, safe" — it includes "...but I couldn't inspect the PDF attachment or query Safe Browsing," giving the user context for their own judgment.
+This means the result is never just "score: 5, safe" — it includes "...but I couldn't inspect the PDF attachment or verify URL destinations," giving the user context for their own judgment.
 
 ---
 
@@ -124,10 +121,10 @@ Thresholds are calibrated against test cases including both attack patterns and 
 |---|---|
 | Untrusted email content | Pydantic models enforce field limits (max lengths, allowed values). HTML is parsed but never rendered or eval'd. |
 | URL safety | URLs are parsed and pattern-matched but never followed. No outbound connections to attacker infrastructure. |
-| Secrets | Environment variables (backend) and `PropertiesService` (Apps Script). Nothing hardcoded. |
+| Secrets | Environment variables via `.env` (backend) and `PropertiesService` (Apps Script). |
 | Data retention | No email content persisted beyond request lifecycle. Stateless by design. |
 | Logging | Analysis metadata only (timing, analyzer names, verdict). Never email content. |
-| Backend access | Authenticated endpoint with rate limiting. |
+| Backend access | HMAC-signed requests with timestamp replay protection. |
 | Code execution | No `eval`, `exec`, or dynamic execution on any input path. |
 
 ---
@@ -148,9 +145,9 @@ python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Configure
+# Configure — set at minimum the HMAC shared secret
 cp .env.example .env
-# Edit .env with your API keys
+# Edit .env: set HMAC_SECRET to the same value as the Apps Script property
 
 # Run
 uvicorn app.main:app --reload --port 8000
@@ -184,71 +181,78 @@ python -m pytest tests/ -v
 
 ```json
 {
-  "message_id": "18a1b2c3d4e5f6g7",
-  "sender": "support@paypa1.com",
-  "recipient": "victim@company.com",
+  "message_id": "phish-001",
+  "sender_address": "security@paypa1-support.com",
+  "sender_display_name": "",
+  "recipient": "victim@example.com",
   "subject": "Your account has been limited - Immediate action required",
-  "date": "2026-04-28T14:30:00Z",
-  "body_text": "Dear customer, your account access has been limited...",
-  "body_html": "<html><body><a href='http://192.168.1.1/login'>Click here to verify</a></body></html>",
-  "headers": {
-    "from": "support@paypa1.com",
-    "reply-to": "different-address@freemail.com",
-    "authentication-results": "mx.google.com; spf=fail smtp.mailfrom=paypa1.com; dkim=fail; dmarc=fail",
-    "received": "from suspicious-server.example.com (10.0.0.1) by mx.google.com"
-  },
-  "attachments": [
-    {
-      "filename": "invoice.pdf.exe",
-      "mime_type": "application/x-msdownload",
-      "size_bytes": 245760,
-      "sha256": "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2"
-    }
-  ]
+  "date": "2026-05-01T10:00:00+00:00",
+  "body_text": "Dear Customer, ... verify your identity immediately ...",
+  "body_html": "<html><body>...<a href=\"http://192.168.1.100/verify-account\">Click here to verify your account</a>...</body></html>",
+  "reply_to_address": "",
+  "return_path_address": "bounce-999@cheap-mailer.xyz",
+  "headers": [
+    { "name": "From", "value": "security@paypa1-support.com" },
+    { "name": "Authentication-Results", "value": "mx.example.com; spf=fail smtp.mailfrom=paypa1-support.com; dkim=fail header.d=paypa1-support.com; dmarc=fail header.from=paypa1-support.com" }
+  ],
+  "attachments": []
 }
 ```
 
-**Response:**
+**Response** (actual output from the engine for this input):
 
 ```json
 {
-  "score": 87.3,
   "verdict": "malicious",
-  "scope": {
-    "analyzers_run": ["authentication_analyzer", "sender_analyzer", "url_structure_analyzer", "body_content_analyzer", "attachment_analyzer"],
-    "intel_sources_run": ["safe_browsing"],
-    "has_html": true,
-    "has_attachments": true,
-    "has_auth_headers": true
-  },
+  "score": 100.0,
+  "explanation": "Verdict: malicious.\n• sender_identity: Sender domain 'paypa1-support.com' resembles brand 'paypal' (critical, +35.0 pts)\n• authentication: DMARC policy returned 'fail' for sender domain (critical, +30.5 pts)\n• url_structure: URL contains IP address: http://192.168.1.100/verify-account (high, +19.8 pts)\nEvidence spans 3 categories. 2 area(s) could not be inspected.",
   "signals": [
     {
-      "id": "spf_fail",
+      "id": "dmarc_fail",
       "category": "authentication",
-      "severity": "high",
-      "confidence": 0.95,
-      "score_contribution": 20.9,
-      "evidence": "SPF check returned 'fail' for sender domain paypa1.com"
+      "severity": "critical",
+      "evidence": "DMARC policy returned 'fail' for sender domain",
+      "confidence": 1.0,
+      "score_contribution": 30.5
     },
     {
       "id": "cousin_domain",
       "category": "sender_identity",
+      "severity": "critical",
+      "evidence": "Sender domain 'paypa1-support.com' resembles brand 'paypal'",
+      "confidence": 1.0,
+      "score_contribution": 35.0
+    },
+    {
+      "id": "ip_address_in_url",
+      "category": "url_structure",
       "severity": "high",
+      "evidence": "URL contains IP address: http://192.168.1.100/verify-account",
       "confidence": 0.9,
-      "score_contribution": 18.5,
-      "evidence": "Domain 'paypa1.com' is 1 edit distance from known brand 'paypal.com'"
+      "score_contribution": 19.8
     }
   ],
-  "top_signals": ["...same structure, top 3 by score_contribution..."],
-  "active_categories": ["authentication", "sender_identity", "url_structure", "body_content", "attachment"],
+  "top_signals": [ "...same structure as signals, top 3 by score_contribution..." ],
+  "active_categories": ["authentication", "sender_identity", "url_structure", "body_content"],
   "blind_spots": [
     {
-      "area": "attachment_content",
-      "reason": "Attachment binary content not parsed",
-      "risk_note": "Malicious payloads inside 'invoice.pdf.exe' are not detected; only metadata was analyzed"
+      "area": "thread_history",
+      "reason": "Single-email analysis only",
+      "risk_note": "Thread context may reveal social engineering patterns"
+    },
+    {
+      "area": "url_destination",
+      "reason": "URLs found but not followed",
+      "risk_note": "A clean-looking domain could redirect to a phishing page"
     }
   ],
-  "explanation": "Strong convergent evidence across 5 categories. Authentication fails for the sender domain, which is a typosquat of PayPal. The email contains an IP-based URL with anchor text mismatch, urgency language typical of credential harvesting, and an attachment with a dangerous double extension."
+  "scope": {
+    "analyzers_run": ["authentication_analyzer", "sender_analyzer", "body_content_analyzer", "url_structure_analyzer", "attachment_analyzer"],
+    "intel_sources_run": [],
+    "has_html": true,
+    "has_attachments": false,
+    "has_auth_headers": true
+  }
 }
 ```
 
