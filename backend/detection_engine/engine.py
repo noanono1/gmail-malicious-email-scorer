@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import logging
+import re
 from collections.abc import Sequence
+from logging import getLogger
 
 from detection_engine.analyzers.base import BaseAnalyzer
 from detection_engine.domain.email import EmailData
@@ -16,13 +17,41 @@ from detection_engine.domain.verdict import AnalysisResult, AnalysisScope
 from detection_engine.intel_sources.base import ThreatIntelSource
 from detection_engine.scoring import classify_verdict, score_signals
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
 
 _THREAD_HISTORY_BLIND_SPOT = BlindSpot(
     area=BlindSpotArea.THREAD_HISTORY,
     reason="Single-email analysis only",
     risk_note="Thread context may reveal social engineering patterns",
 )
+
+# TODO: HTML_RENDERING blind spot is defined in BlindSpotArea but never emitted.
+# It should be reported when email.body_html is non-empty, warning that CSS tricks,
+# hidden elements, and JS-based redirects are not detected because we parse HTML
+# structure but don't render it. Decision needed: emit it here in the engine
+# (alongside EMBEDDED_IMAGE/QR_CODE — a structural check on the email) or inside
+# BodyContentAnalyzer (which already processes the HTML body for forms/content).
+# Engine-level is more consistent with how EMBEDDED_IMAGE works, and avoids coupling
+# the blind spot to an analyzer that might not run.
+_IMG_TAG_PATTERN = re.compile(r"<img\b", re.IGNORECASE)
+
+_EMBEDDED_IMAGE_BLIND_SPOT = BlindSpot(
+    area=BlindSpotArea.EMBEDDED_IMAGE,
+    reason="Embedded images not analyzed",
+    risk_note="Images may contain text, QR codes, or visual phishing undetectable by text analysis",
+)
+
+_QR_CODE_BLIND_SPOT = BlindSpot(
+    area=BlindSpotArea.QR_CODE,
+    reason="QR code detection not available",
+    risk_note="QR codes in images can encode phishing URLs — cannot be inspected without image processing",
+)
+
+
+def _email_contains_images(email: EmailData) -> bool:
+    if email.body_html and _IMG_TAG_PATTERN.search(email.body_html):
+        return True
+    return any(a.mime_type.startswith("image/") for a in email.attachments)
 
 
 class DetectionEngine:
@@ -43,12 +72,9 @@ class DetectionEngine:
         collected_signals: list[Signal] = []
         collected_blind_spots: list[BlindSpot] = [_THREAD_HISTORY_BLIND_SPOT]
 
-        # TODO: detection-policy.md defines EMBEDDED_IMAGE and QR_CODE blind spots that
-        # should be reported when the email contains inline images (<img> tags or image
-        # MIME parts). Currently nothing emits them. This requires deciding where the
-        # detection belongs — the engine (structural check on email data), a dedicated
-        # image-aware analyzer, or the body content analyzer. Deferring until we settle
-        # on how image-bearing emails flow through the system.
+        if _email_contains_images(email):
+            collected_blind_spots.append(_EMBEDDED_IMAGE_BLIND_SPOT)
+            collected_blind_spots.append(_QR_CODE_BLIND_SPOT)
 
         self._run_analyzers(email, collected_signals, collected_blind_spots)
         intel_sources_executed = self._run_intel_sources(email, collected_signals, collected_blind_spots)

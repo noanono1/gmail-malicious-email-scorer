@@ -7,11 +7,16 @@ from detection_engine.domain.email import EmailData
 from detection_engine.domain.enums import BlindSpotArea, SignalCategory, SignalSeverity
 from detection_engine.domain.signals import BlindSpot, AnalysisOutput, Signal
 
-# TODO: This list extends beyond the 8 extensions documented in detection-policy.md
-# (.exe, .scr, .bat, .cmd, .ps1, .vbs, .js, .msi). The extras (.com, .pif, .hta, .wsf,
-# .cpl, .reg) are genuine executable/control-panel threats, but .html/.htm are debatable
-# as "dangerous" attachments. Reconcile code and policy: either trim the list or update
-# detection-policy.md with rationale for each addition.
+# TODO: .html/.htm are debatable as "dangerous" attachments. Unlike the other extensions
+# here (which execute code natively on the OS), HTML files only run in a browser and are
+# routinely attached to legitimate emails (e.g. receipts, reports, newsletter archives).
+# The risk is real — an HTML attachment can contain a credential-harvesting form or JS
+# redirect — but the false-positive rate may be too high for CRITICAL severity.
+# Options: (a) keep them but lower to HIGH or MEDIUM severity, (b) remove them and rely
+# on CONTENT-3 (HTML form detection) which already catches the main attack pattern,
+# (c) keep at CRITICAL but add an allowlist for common legitimate MIME subtypes.
+# The other non-original extensions (.com, .pif, .hta, .wsf, .cpl, .reg) are genuine
+# executable/control-panel threats and should stay.
 _DANGEROUS_EXTENSIONS: frozenset[str] = frozenset({
     ".exe", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".msi",
     ".com", ".pif", ".hta", ".wsf", ".cpl", ".reg",

@@ -13,8 +13,20 @@ logger = structlog.get_logger()
 
 router = APIRouter(tags=["analysis"], dependencies=[Depends(verify_hmac)])
 
-# TODO: add safety checks on request size/content to prevent abuse (e.g. DoS with huge emails)
-# TODO: verify the request originates from an active add-on session, not arbitrary callers
+# TODO: Pydantic enforces field-level limits (max_length on body_text/body_html, max 200
+# headers, max 20 attachments) but there is no check on total request payload size.
+# A crafted request with many max-length fields could still consume significant memory.
+# Options: (a) add a FastAPI middleware that rejects requests exceeding a total byte
+# threshold (e.g. 1MB), (b) use a streaming body parser with an early-abort limit,
+# (c) rely on a reverse proxy (Railway/nginx) to enforce max body size upstream.
+# Option (c) is the lightest for demo, but the app should have its own defense too.
+#
+# TODO: HMAC auth proves the caller knows the shared secret, but any client with the
+# secret can call /analyze — there is no session binding to the Gmail Add-on.
+# For demo scope this is acceptable (the secret is never exposed to the browser).
+# For production, consider: (a) short-lived tokens issued per add-on session,
+# (b) tying HMAC to a per-user nonce from the Apps Script event object,
+# (c) OAuth2 service account auth instead of symmetric HMAC.
 @router.post("/analyze", response_model=AnalyzeResponse)
 async def analyze_email(
     email_request: AnalyzeRequest,
