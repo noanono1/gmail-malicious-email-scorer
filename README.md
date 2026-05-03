@@ -64,7 +64,7 @@ The detection engine (`detection_engine/`) is a pure Python library with zero we
 |---|---|---|
 | **Header** | Authentication | SPF/DKIM/DMARC failures, From/Reply-To mismatch, missing Message-ID, suspicious Received chains |
 | **Sender** | Identity | Freemail from "corporate" senders, cousin/typosquat domains, display-name spoofing, suspicious TLDs |
-| **URL** | Links | IP-based URLs, anchor/href mismatch, IDN homograph attacks, URL shortener abuse, suspicious path patterns |
+| **URL** | URL structure | IP-based URLs, anchor/href mismatch, URL shortener use, excessive link count |
 | **Content** | Language | Urgency/pressure language, credential harvesting phrases, financial manipulation, threat language |
 | **Attachment** | Files | Dangerous extensions (.exe, .scr, .js), double extensions (.pdf.exe), macro-enabled Office files, password-protected archive hints |
 
@@ -86,10 +86,10 @@ Every analysis result includes a blind spots section — runtime-generated decla
 |---|---|---|
 | Email has file attachments | "Attachment content not inspected" | Malicious payloads inside files are not detected; only metadata is analyzed |
 | Body contains `<img>` tags | "Embedded images not analyzed" | Image-based phishing and tracking pixels are not detected |
-| No Safe Browsing API key | "URL reputation not verified" | Known malicious URLs will not be flagged by external threat intelligence |
+| No Safe Browsing API key | "Safe Browsing not queried" | Known malicious URLs will not be flagged — only structural patterns are checked |
 | Email has HTML body | "HTML rendering behavior not simulated" | CSS/JS-based content hiding or redirects are not detected |
 
-This means the result is never just "score: 5, safe" — it includes "...but I couldn't inspect the PDF attachment or verify URL reputation," giving the user context for their own judgment.
+This means the result is never just "score: 5, safe" — it includes "...but I couldn't inspect the PDF attachment or query Safe Browsing," giving the user context for their own judgment.
 
 ---
 
@@ -240,7 +240,7 @@ python -m pytest tests/ -v
     }
   ],
   "top_signals": ["...same structure, top 3 by score_contribution..."],
-  "categories_active": ["authentication", "sender_identity", "url_reputation", "content", "attachment"],
+  "categories_active": ["authentication", "sender_identity", "url_structure", "content", "attachment"],
   "blind_spots": [
     {
       "area": "attachment_content",

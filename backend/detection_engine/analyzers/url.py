@@ -79,7 +79,7 @@ class UrlAnalyzer(BaseAnalyzer):
 
     @property
     def category(self) -> SignalCategory:
-        return SignalCategory.URL_REPUTATION
+        return SignalCategory.URL_STRUCTURE
 
     def analyze(self, email: EmailData) -> DetectionOutput:
         if not email.body_html:
@@ -126,7 +126,7 @@ class UrlAnalyzer(BaseAnalyzer):
             signals.append(
                 Signal(
                     id="url_href_display_mismatch",
-                    category=SignalCategory.URL_REPUTATION,
+                    category=SignalCategory.URL_STRUCTURE,
                     severity=SignalSeverity.CRITICAL,
                     confidence=1.0,
                     evidence=f"Link text mismatches href: {'; '.join(mismatched[:3])}",
@@ -147,7 +147,7 @@ class UrlAnalyzer(BaseAnalyzer):
             signals.append(
                 Signal(
                     id="ip_address_in_url",
-                    category=SignalCategory.URL_REPUTATION,
+                    category=SignalCategory.URL_STRUCTURE,
                     severity=SignalSeverity.HIGH,
                     confidence=0.9,
                     evidence=f"URL contains IP address: {ip_urls[0]}",
@@ -167,7 +167,7 @@ class UrlAnalyzer(BaseAnalyzer):
             signals.append(
                 Signal(
                     id="shortened_url",
-                    category=SignalCategory.URL_REPUTATION,
+                    category=SignalCategory.URL_STRUCTURE,
                     severity=SignalSeverity.LOW,
                     confidence=0.7,
                     evidence=f"Shortened URL detected: {shortened[0]}",
@@ -182,7 +182,7 @@ class UrlAnalyzer(BaseAnalyzer):
             signals.append(
                 Signal(
                     id="excessive_url_count",
-                    category=SignalCategory.URL_REPUTATION,
+                    category=SignalCategory.URL_STRUCTURE,
                     severity=SignalSeverity.INFO,
                     confidence=0.5,
                     evidence=f"{len(unique_domains)} unique external domains linked",

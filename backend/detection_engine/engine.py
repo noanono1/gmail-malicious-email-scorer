@@ -27,7 +27,7 @@ _THREAD_HISTORY_BLIND_SPOT = BlindSpot(
 _CATEGORY_CRASH_BLIND_SPOT_AREA: dict[SignalCategory, BlindSpotArea] = {
     SignalCategory.AUTHENTICATION: BlindSpotArea.AUTHENTICATION_HEADERS,
     SignalCategory.SENDER_IDENTITY: BlindSpotArea.AUTHENTICATION_HEADERS,
-    SignalCategory.URL_REPUTATION: BlindSpotArea.URL_DESTINATION,
+    SignalCategory.URL_STRUCTURE: BlindSpotArea.URL_DESTINATION,
     SignalCategory.CONTENT: BlindSpotArea.HTML_RENDERING,
     SignalCategory.ATTACHMENT: BlindSpotArea.ATTACHMENT_CONTENT,
 }
@@ -97,7 +97,7 @@ class DetectionEngine:
                     BlindSpot(
                         area=_CATEGORY_CRASH_BLIND_SPOT_AREA[analyzer.category],
                         reason=f"Analyzer '{analyzer.name}' crashed",
-                        risk_note=f"Coverage gap in {analyzer.category.value} detection",
+                        risk_note=f"Coverage gap in {analyzer.category.value} analysis",
                     )
                 )
                 continue
@@ -117,8 +117,8 @@ class DetectionEngine:
                     BlindSpot(
                         area=BlindSpotArea.INTEL_SOURCE_UNAVAILABLE,
                         reason=f"{source.source_type.value} not configured",
-                        risk_note="Threat intelligence not consulted — URLs and "
-                        "hashes were not checked against reputation databases",
+                        risk_note=f"Threat intelligence not consulted — "
+                        f"{source.source_type.value} was not queried",
                     )
                 )
                 continue
@@ -130,8 +130,8 @@ class DetectionEngine:
                     BlindSpot(
                         area=BlindSpotArea.INTEL_SOURCE_UNAVAILABLE,
                         reason=f"{source.source_type.value} query failed",
-                        risk_note="Threat intelligence not consulted — URLs and "
-                        "hashes were not checked against reputation databases",
+                        risk_note=f"Threat intelligence not consulted — "
+                        f"{source.source_type.value} was not queried",
                     )
                 )
                 continue

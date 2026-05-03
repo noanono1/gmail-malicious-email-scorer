@@ -8,7 +8,7 @@ from detection_engine.domain.signals import DetectionOutput
 
 
 class BaseAnalyzer(ABC):
-    """A pure, deterministic, offline detector for one signal category.
+    """A pure, deterministic, offline analyzer for one signal category.
 
     Each analyzer owns its own blind spots — only it knows what it could not
     check for a given email. Analyzers never make network calls; they inspect

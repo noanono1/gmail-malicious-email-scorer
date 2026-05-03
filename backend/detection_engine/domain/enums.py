@@ -19,7 +19,7 @@ class SignalSeverity(str, Enum):
 class SignalCategory(str, Enum):
     AUTHENTICATION = "authentication"
     SENDER_IDENTITY = "sender_identity"
-    URL_REPUTATION = "url_reputation"
+    URL_STRUCTURE = "url_structure"
     CONTENT = "content"
     ATTACHMENT = "attachment"
 
