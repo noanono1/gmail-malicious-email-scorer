@@ -16,7 +16,7 @@ logger = structlog.get_logger()
 def create_app() -> FastAPI:
     application = FastAPI(
         title="Malicious Email Scorer",
-        docs_url="/docs", # TODO: restore docs_url before deploy
+        docs_url=None,
         redoc_url=None,
     )
 

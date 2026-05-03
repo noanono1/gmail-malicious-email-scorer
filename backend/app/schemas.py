@@ -138,7 +138,7 @@ class AnalyzeResponse(BaseModel):
             explanation=analysis_result.explanation,
             signals=[_signal_to_response(signal) for signal in analysis_result.signals],
             top_signals=[_signal_to_response(signal) for signal in analysis_result.top_signals],
-            active_categories=list(analysis_result.active_categories),
+            active_categories=sorted(analysis_result.active_categories, key=lambda c: c.value),
             blind_spots=[
                 BlindSpotResponse(
                     area=blind_spot.area,

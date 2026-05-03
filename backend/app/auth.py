@@ -20,7 +20,7 @@ async def verify_hmac(
     try:
         request_timestamp = int(x_timestamp)
     except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid timestamp")
+        raise HTTPException(status_code=401, detail="Invalid timestamp") from None
 
     if abs(time.time() - request_timestamp) > MAX_TIMESTAMP_DRIFT_SECONDS:
         raise HTTPException(status_code=401, detail="Request expired")
@@ -29,7 +29,7 @@ async def verify_hmac(
 
     expected_signature = hmac.new(
         HMAC_SECRET.encode(),
-        x_timestamp.encode() + request_body,
+        x_timestamp.encode() + b"." + request_body,
         hashlib.sha256,
     ).hexdigest()
 

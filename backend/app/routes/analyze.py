@@ -51,6 +51,15 @@ async def analyze_email(
                 "message": "Email analysis could not be completed due to an internal error.",
             },
         )
+    except Exception:
+        logger.exception("unexpected_analysis_error")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "internal_error",
+                "message": "An unexpected error occurred during analysis.",
+            },
+        )
 
     logger.info(
         "analysis_complete",

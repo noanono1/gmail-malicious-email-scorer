@@ -64,14 +64,27 @@ _FORM_PATTERN = re.compile(
 )
 
 
+_INVISIBLE_TAGS = frozenset({"script", "style"})
+
+
 class _HtmlTextExtractor(HTMLParser):
 
     def __init__(self) -> None:
         super().__init__()
         self._parts: list[str] = []
+        self._skip_depth: int = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag in _INVISIBLE_TAGS:
+            self._skip_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in _INVISIBLE_TAGS and self._skip_depth > 0:
+            self._skip_depth -= 1
 
     def handle_data(self, data: str) -> None:
-        self._parts.append(data)
+        if self._skip_depth == 0:
+            self._parts.append(data)
 
     def get_text(self) -> str:
         return " ".join(self._parts)
