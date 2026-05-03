@@ -67,10 +67,11 @@ function tryExtractErrorDetail(responseText) {
 }
 
 /**
- * Computes HMAC-SHA256 signature: sign(timestamp + body) with the shared secret.
+ * Computes HMAC-SHA256 signature: sign(timestamp.body) with the shared secret.
+ * The dot separator prevents ambiguity between timestamp and body boundaries.
  */
 function computeHmacSignature(secret, timestamp, body) {
-  var dataToSign = timestamp + body;
+  var dataToSign = timestamp + "." + body;
   var signatureBytes = Utilities.computeHmacSignature(
     Utilities.MacAlgorithm.HMAC_SHA_256,
     dataToSign,

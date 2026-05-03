@@ -3,13 +3,14 @@ var VERDICT_STYLES = {
   suspicious:       { color: "#F9A825", icon: "⚠", label: "SUSPICIOUS" },
   likely_malicious: { color: "#E65100", icon: "⚠", label: "LIKELY MALICIOUS" },
   malicious:        { color: "#C62828", icon: "✕", label: "MALICIOUS" },
+  _unknown:         { color: "#757575", icon: "?", label: "UNKNOWN" },
 };
 
 /**
  * Builds the main analysis result card from the backend response.
  */
 function buildAnalysisCard(result, messageId) {
-  var verdictStyle = VERDICT_STYLES[result.verdict] || VERDICT_STYLES.safe;
+  var verdictStyle = VERDICT_STYLES[result.verdict] || VERDICT_STYLES._unknown;
   var cardBuilder = CardService.newCardBuilder();
 
   cardBuilder.addSection(buildVerdictSection(result, verdictStyle));

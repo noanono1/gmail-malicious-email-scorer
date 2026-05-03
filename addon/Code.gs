@@ -64,10 +64,11 @@ function onGmailMessageOpen(event) {
  * Re-analyze action — triggered by the "Re-analyze" button.
  */
 function onReanalyze(event) {
-  var messageId = event.parameters.messageId;
-  console.log("Re-analyze requested for: " + messageId);
+  var messageId = "(unknown)";
 
   try {
+    messageId = event.parameters.messageId;
+    console.log("Re-analyze requested for: " + messageId);
     activateCurrentMessageAccess(event);
 
     var emailPayload = extractEmailData(messageId);
