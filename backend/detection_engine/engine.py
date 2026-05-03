@@ -8,9 +8,9 @@ from detection_engine.domain.email import EmailData
 from detection_engine.domain.enums import (
     BlindSpotArea,
     IntelSourceType,
-    SignalCategory,
     Verdict,
 )
+from detection_engine.domain.exceptions import AnalyzerCrashed
 from detection_engine.domain.signals import BlindSpot, Signal
 from detection_engine.domain.verdict import AnalysisResult, AnalysisScope
 from detection_engine.intel_sources.base import ThreatIntelSource
@@ -23,14 +23,6 @@ _THREAD_HISTORY_BLIND_SPOT = BlindSpot(
     reason="Single-email analysis only",
     risk_note="Thread context may reveal social engineering patterns",
 )
-
-_CATEGORY_CRASH_BLIND_SPOT_AREA: dict[SignalCategory, BlindSpotArea] = {
-    SignalCategory.AUTHENTICATION: BlindSpotArea.AUTHENTICATION_HEADERS,
-    SignalCategory.SENDER_IDENTITY: BlindSpotArea.AUTHENTICATION_HEADERS,
-    SignalCategory.URL_STRUCTURE: BlindSpotArea.URL_DESTINATION,
-    SignalCategory.BODY_CONTENT: BlindSpotArea.HTML_RENDERING,
-    SignalCategory.ATTACHMENT: BlindSpotArea.ATTACHMENT_CONTENT,
-}
 
 
 class DetectionEngine:
@@ -50,6 +42,13 @@ class DetectionEngine:
     def analyze(self, email: EmailData) -> AnalysisResult:
         collected_signals: list[Signal] = []
         collected_blind_spots: list[BlindSpot] = [_THREAD_HISTORY_BLIND_SPOT]
+
+        # TODO: detection-policy.md defines EMBEDDED_IMAGE and QR_CODE blind spots that
+        # should be reported when the email contains inline images (<img> tags or image
+        # MIME parts). Currently nothing emits them. This requires deciding where the
+        # detection belongs — the engine (structural check on email data), a dedicated
+        # image-aware analyzer, or the body content analyzer. Deferring until we settle
+        # on how image-bearing emails flow through the system.
 
         self._run_analyzers(email, collected_signals, collected_blind_spots)
         intel_sources_executed = self._run_intel_sources(email, collected_signals, collected_blind_spots)
@@ -91,16 +90,8 @@ class DetectionEngine:
         for analyzer in self._analyzers:
             try:
                 analyzer_output = analyzer.analyze(email)
-            except Exception:
-                logger.exception("Analyzer crashed: %s", analyzer.name)
-                blind_spots.append(
-                    BlindSpot(
-                        area=_CATEGORY_CRASH_BLIND_SPOT_AREA[analyzer.category],
-                        reason=f"Analyzer '{analyzer.name}' crashed",
-                        risk_note=f"Coverage gap in {analyzer.category.value} analysis",
-                    )
-                )
-                continue
+            except Exception as exc:
+                raise AnalyzerCrashed(analyzer.name, exc) from exc
             signals.extend(analyzer_output.signals)
             blind_spots.extend(analyzer_output.blind_spots)
 

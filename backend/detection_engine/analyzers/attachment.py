@@ -7,6 +7,11 @@ from detection_engine.domain.email import EmailData
 from detection_engine.domain.enums import BlindSpotArea, SignalCategory, SignalSeverity
 from detection_engine.domain.signals import BlindSpot, AnalysisOutput, Signal
 
+# TODO: This list extends beyond the 8 extensions documented in detection-policy.md
+# (.exe, .scr, .bat, .cmd, .ps1, .vbs, .js, .msi). The extras (.com, .pif, .hta, .wsf,
+# .cpl, .reg) are genuine executable/control-panel threats, but .html/.htm are debatable
+# as "dangerous" attachments. Reconcile code and policy: either trim the list or update
+# detection-policy.md with rationale for each addition.
 _DANGEROUS_EXTENSIONS: frozenset[str] = frozenset({
     ".exe", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".msi",
     ".com", ".pif", ".hta", ".wsf", ".cpl", ".reg",
