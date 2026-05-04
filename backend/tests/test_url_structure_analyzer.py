@@ -1,4 +1,4 @@
-"""Unit tests for UrlStructureAnalyzer — href/display mismatch, IP URLs, shorteners, excessive links."""
+"""Unit tests for UrlStructureAnalyzer — href/display mismatch and IP-literal hosts."""
 
 from __future__ import annotations
 
@@ -80,13 +80,12 @@ class TestIpInUrl:
         assert len(signals) == 1
         assert signals[0].severity == SignalSeverity.HIGH
 
-    def test_ipv6_bracket_not_detected(self, analyzer: UrlStructureAnalyzer):
-        # urlparse strips brackets from IPv6 hosts, so _is_ip_address's bracket check
-        # never triggers. This documents the current behavior (known limitation).
+    def test_ipv6_bracket_flagged(self, analyzer: UrlStructureAnalyzer):
         html = '<a href="http://[::1]/login">Log in</a>'
         output = analyzer.analyze(_make_email(body_html=html))
         signals = [s for s in output.signals if s.id == "ip_address_in_url"]
-        assert len(signals) == 0
+        assert len(signals) == 1
+        assert signals[0].severity == SignalSeverity.HIGH
 
     def test_normal_domain_not_flagged(self, analyzer: UrlStructureAnalyzer):
         html = '<a href="https://example.com">Example</a>'
@@ -97,48 +96,6 @@ class TestIpInUrl:
         output = analyzer.analyze(_make_email(body_text="Visit http://10.0.0.1/page"))
         signals = [s for s in output.signals if s.id == "ip_address_in_url"]
         assert len(signals) == 1
-
-
-# ---------------------------------------------------------------------------
-# URL-3: Shortened URLs
-# ---------------------------------------------------------------------------
-
-
-class TestShortenedUrls:
-    def test_bit_ly_flagged(self, analyzer: UrlStructureAnalyzer):
-        html = '<a href="https://bit.ly/abc123">Click</a>'
-        output = analyzer.analyze(_make_email(body_html=html))
-        signals = [s for s in output.signals if s.id == "shortened_url"]
-        assert len(signals) == 1
-        assert signals[0].severity == SignalSeverity.LOW
-
-    def test_tinyurl_flagged(self, analyzer: UrlStructureAnalyzer):
-        output = analyzer.analyze(_make_email(body_text="http://tinyurl.com/xyz"))
-        assert [s for s in output.signals if s.id == "shortened_url"]
-
-    def test_normal_url_not_flagged(self, analyzer: UrlStructureAnalyzer):
-        html = '<a href="https://example.com/long/path">Click</a>'
-        output = analyzer.analyze(_make_email(body_html=html))
-        assert not [s for s in output.signals if s.id == "shortened_url"]
-
-
-# ---------------------------------------------------------------------------
-# URL-4: Excessive unique domains
-# ---------------------------------------------------------------------------
-
-
-class TestExcessiveUrls:
-    def test_many_unique_domains_flagged(self, analyzer: UrlStructureAnalyzer):
-        links = " ".join(f"https://domain{i}.com/page" for i in range(12))
-        output = analyzer.analyze(_make_email(body_text=links))
-        signals = [s for s in output.signals if s.id == "excessive_url_count"]
-        assert len(signals) == 1
-        assert signals[0].severity == SignalSeverity.INFO
-
-    def test_few_domains_not_flagged(self, analyzer: UrlStructureAnalyzer):
-        html = '<a href="https://a.com">A</a> <a href="https://b.com">B</a>'
-        output = analyzer.analyze(_make_email(body_html=html))
-        assert not [s for s in output.signals if s.id == "excessive_url_count"]
 
 
 # ---------------------------------------------------------------------------

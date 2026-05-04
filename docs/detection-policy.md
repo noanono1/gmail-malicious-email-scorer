@@ -101,11 +101,11 @@ These indicators analyze links in the email body without following them.
 | ID | Indicator | What it detects | Severity | Signal strength | FP risk | Implementation notes |
 |---|---|---|---|---|---|---|
 | **URL-1** | href ≠ display text mismatch | Link text says "paypal.com" but href points elsewhere | CRITICAL | Very strong — deliberate deception | Very low — legit emails wont probably do this | Parse HTML `<a>` tags, extract href and inner text. If inner text looks like a URL (contains a dot and no spaces), compare its domain against the href domain |
-| **URL-2** | IP address in URL | `http://192.168.1.100/verify` | HIGH | Strong — legitimate services use domain names | Low | Regex match for URLs containing IPv4 literals or `[IPv6:]` |
-| **URL-3** | Shortened URL | bit.ly, tinyurl.com, t.co links | LOW | Weak alone — very common in legit marketing | High | Match href domains against a known shortener list. Low severity because legit use is widespread — this is a supporting signal only |
-| **URL-4** | Excessive URL count | 10+ unique external links | INFO | Minimal alone | High | Count distinct external domains in links. INFO severity — purely contextual |
+| **URL-2** | IP-literal host in URL | `http://192.168.1.100/verify`, `http://[::1]/verify` | HIGH | Strong — legitimate services use domain names | Low | Parse the URL host and validate it with `ipaddress.ip_address` (covers IPv4 and IPv6) |
 
 **Why URL mismatch is CRITICAL**: This is the single strongest phishing indicator. When a link displays "www.paypal.com" but the href points to an IP address or unrelated domain, there is probably no innocent explanation. Combined with a cousin domain (SENDER-1), this produces convergent evidence across two categories, triggering the cross-category boost.
+
+**What this category does not flag**: shortened URLs (bit.ly, tinyurl.com, t.co) and high link counts are intentionally excluded — see "Deferred Indicators" for the reasoning. The destination question they gesture at is already represented as the `URL_DESTINATION` blind spot.
 
 ### BODY_CONTENT category
 
@@ -144,6 +144,8 @@ These indicators were evaluated and intentionally excluded from the initial scop
 | **Obfuscated HTML** | Base64-encoded sections, CSS tricks to hide text. Detecting these requires rendering or deep HTML analysis. Moderate effort for low commonality | HTML rendering engine or heuristic decoder |
 | **NLP tone analysis** | ML-based content classification. Entirely different system — requires training data, model serving, and introduces non-determinism | Trained classifier, inference infrastructure |
 | **QR code phishing** | Embedded QR codes pointing to malicious URLs. Requires image parsing — not available in static text analysis | Image processing library, QR decoder |
+| **Shortened URL detection** | Shorteners (bit.ly, t.co, tinyurl.com) hide the destination, but legitimate marketing, social media, and CRM tooling use them constantly. As a standalone signal the FP rate is too high to defend; the destination question it raises is already represented by the `URL_DESTINATION` blind spot, and is properly resolved by following the link in a sandbox or threat-intel service rather than by host-list matching | A `ThreatIntelSource` that resolves shorteners (or a Safe Browsing query on the resolved URL) |
+| **Link volume / excessive URL count** | Counting unique link domains is metadata, not evidence. As an INFO-severity signal it contributed 0 points to the score while still appearing in the findings list — pure noise. If link volume ever becomes useful it will be as an input to a stronger composite signal, not as a finding on its own | A composite scoring rule that combines link volume with content or sender heuristics |
 
 ---
 

@@ -147,7 +147,7 @@ MASS_PHISHING_PAYPAL = {
 
 MASS_PHISHING_MICROSOFT = {
     "label": "Mass phishing — Microsoft 365 password expiry, shortened URL",
-    "tags": ["spoofed_sender", "auth_fail", "shortened_url", "urgency", "credential_ask"],
+    "tags": ["spoofed_sender", "auth_fail", "urgency", "credential_ask"],
     "expected": {
         "verdict": Verdict.MALICIOUS,
         "min_score": 65,
@@ -320,7 +320,7 @@ SPEAR_PHISH_COUSIN_DOMAIN = {
 
 SPEAR_PHISH_THREAD_HIJACK = {
     "label": "Thread hijack — RE: prefix on real subject, injected malicious link",
-    "tags": ["thread_hijack", "auth_fail", "shortened_url"],
+    "tags": ["thread_hijack", "auth_fail"],
     "expected": {
         "verdict_in": [Verdict.SUSPICIOUS, Verdict.LIKELY_MALICIOUS],
         "min_score": 35,

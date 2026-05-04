@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ipaddress
 import re
 from html.parser import HTMLParser
 from urllib.parse import urlparse
@@ -10,29 +11,7 @@ from detection_engine.domain.blind_spot_catalog import URL_DESTINATION
 from detection_engine.domain.enums import SignalCategory, SignalSeverity
 from detection_engine.domain.signals import AnalysisOutput, Signal
 
-_SHORTENER_DOMAINS: frozenset[str] = frozenset({
-    "bit.ly",
-    "tinyurl.com",
-    "t.co",
-    "goo.gl",
-    "ow.ly",
-    "is.gd",
-    "buff.ly",
-    "rebrand.ly",
-    "cutt.ly",
-    "shorturl.at",
-})
-
-_IPV4_PATTERN = re.compile(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$")
-
-_EXCESSIVE_URL_THRESHOLD = 10
-
 _BARE_URL_PATTERN = re.compile(r"https?://[^\s<>\"']+")
-
-
-def _extract_bare_urls(text: str) -> list[tuple[str, str]]:
-    """Extract bare URLs from plain text as (url, '') tuples — no display text."""
-    return [(url, "") for url in _BARE_URL_PATTERN.findall(text)]
 
 
 class _LinkExtractor(HTMLParser):
@@ -71,120 +50,98 @@ def _looks_like_url(text: str) -> bool:
     return "." in text and " " not in text and len(text) > 3
 
 
-def _is_ip_address(host: str) -> bool:
-    if _IPV4_PATTERN.match(host):
-        return True
-    if host.startswith("[") and host.endswith("]"):
-        return True
-    return False
+def _is_ip_literal(host: str) -> bool:
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return True
 
 
 class UrlStructureAnalyzer(BaseAnalyzer):
+    """Detects deliberate URL deception: link text that lies about its destination,
+    and hosts that name a raw IP instead of a domain. Both are low-FP, high-signal
+    indicators of phishing infrastructure. Weaker URL heuristics (shorteners, link
+    counts) are intentionally excluded — see docs/detection-policy.md."""
 
     @property
     def name(self) -> str:
         return "url_structure_analyzer"
 
     def analyze(self, email: EmailData) -> AnalysisOutput:
-        html_links: list[tuple[str, str]] = []
-        if email.body_html:
-            extractor = _LinkExtractor()
-            extractor.feed(email.body_html)
-            html_links = extractor.links
-
-        text_links = _extract_bare_urls(email.body_text) if email.body_text else []
-
-        seen_urls = {href for href, _ in html_links}
-        unique_text_links = [(url, dt) for url, dt in text_links if url not in seen_urls]
-        all_links = html_links + unique_text_links
+        html_links = self._extract_html_links(email.body_html)
+        text_only_links = self._extract_text_only_links(email.body_text, html_links)
+        all_links = html_links + text_only_links
 
         if not all_links:
             return AnalysisOutput.empty()
 
-        signals: list[Signal] = []
-
-        self._check_href_display_mismatch(html_links, signals)
-        self._check_ip_in_url(all_links, signals)
-        self._check_shortened_urls(all_links, signals)
-        self._check_excessive_urls(all_links, signals)
+        signals = [
+            signal
+            for signal in (
+                self._href_display_mismatch_signal(html_links),
+                self._ip_literal_host_signal(all_links),
+            )
+            if signal is not None
+        ]
 
         return AnalysisOutput(signals=tuple(signals), blind_spots=(URL_DESTINATION,))
 
-    def _check_href_display_mismatch(
-        self, links: list[tuple[str, str]], signals: list[Signal]
-    ) -> None:
-        mismatched: list[str] = []
-        for href, display_text in links:
+    def _extract_html_links(self, body_html: str) -> list[tuple[str, str]]:
+        if not body_html:
+            return []
+        extractor = _LinkExtractor()
+        extractor.feed(body_html)
+        return extractor.links
+
+    def _extract_text_only_links(
+        self, body_text: str, html_links: list[tuple[str, str]]
+    ) -> list[tuple[str, str]]:
+        if not body_text:
+            return []
+        already_seen = {href for href, _ in html_links}
+        return [
+            (url, "")
+            for url in _BARE_URL_PATTERN.findall(body_text)
+            if url not in already_seen
+        ]
+
+    def _href_display_mismatch_signal(
+        self, html_links: list[tuple[str, str]]
+    ) -> Signal | None:
+        mismatches: list[str] = []
+        for href, display_text in html_links:
             if not _looks_like_url(display_text):
                 continue
             href_domain = _extract_domain(href)
             display_domain = _extract_domain(display_text)
             if href_domain and display_domain and href_domain != display_domain:
-                mismatched.append(f"displays '{display_text}' → links to '{href_domain}'")
+                mismatches.append(f"displays '{display_text}' → links to '{href_domain}'")
 
-        if mismatched:
-            signals.append(
-                Signal(
-                    id="url_href_display_mismatch",
-                    category=SignalCategory.URL_STRUCTURE,
-                    severity=SignalSeverity.CRITICAL,
-                    confidence=1.0,
-                    summary=f"Link text mismatches href: {'; '.join(mismatched[:3])}",
-                )
-            )
+        if not mismatches:
+            return None
+        return Signal(
+            id="url_href_display_mismatch",
+            category=SignalCategory.URL_STRUCTURE,
+            severity=SignalSeverity.CRITICAL,
+            confidence=1.0,
+            summary=f"Link text mismatches href: {'; '.join(mismatches[:3])}",
+        )
 
-    def _check_ip_in_url(
-        self, links: list[tuple[str, str]], signals: list[Signal]
-    ) -> None:
-        ip_urls: list[str] = []
-        for href, _ in links:
-            parsed = urlparse(href)
-            host = parsed.hostname or ""
-            if _is_ip_address(host):
-                ip_urls.append(href)
-
-        if ip_urls:
-            signals.append(
-                Signal(
-                    id="ip_address_in_url",
-                    category=SignalCategory.URL_STRUCTURE,
-                    severity=SignalSeverity.HIGH,
-                    confidence=0.9,
-                    summary=f"URL contains IP address: {ip_urls[0]}",
-                )
-            )
-
-    def _check_shortened_urls(
-        self, links: list[tuple[str, str]], signals: list[Signal]
-    ) -> None:
-        shortened: list[str] = []
-        for href, _ in links:
-            domain = _extract_domain(href)
-            if domain in _SHORTENER_DOMAINS:
-                shortened.append(href)
-
-        if shortened:
-            signals.append(
-                Signal(
-                    id="shortened_url",
-                    category=SignalCategory.URL_STRUCTURE,
-                    severity=SignalSeverity.LOW,
-                    confidence=0.7,
-                    summary=f"Shortened URL detected: {shortened[0]}",
-                )
-            )
-
-    def _check_excessive_urls(
-        self, links: list[tuple[str, str]], signals: list[Signal]
-    ) -> None:
-        unique_domains = {_extract_domain(href) for href, _ in links} - {""}
-        if len(unique_domains) >= _EXCESSIVE_URL_THRESHOLD:
-            signals.append(
-                Signal(
-                    id="excessive_url_count",
-                    category=SignalCategory.URL_STRUCTURE,
-                    severity=SignalSeverity.INFO,
-                    confidence=0.5,
-                    summary=f"{len(unique_domains)} unique external domains linked",
-                )
-            )
+    def _ip_literal_host_signal(
+        self, links: list[tuple[str, str]]
+    ) -> Signal | None:
+        ip_urls = [
+            href
+            for href, _ in links
+            if _is_ip_literal(urlparse(href).hostname or "")
+        ]
+        if not ip_urls:
+            return None
+        return Signal(
+            id="ip_address_in_url",
+            category=SignalCategory.URL_STRUCTURE,
+            severity=SignalSeverity.HIGH,
+            confidence=0.9,
+            summary=f"URL contains IP address: {ip_urls[0]}",
+        )
