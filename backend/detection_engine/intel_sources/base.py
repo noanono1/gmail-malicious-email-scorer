@@ -11,7 +11,8 @@ class ThreatIntelSource(ABC):
     """Encapsulates one external lookup (Safe Browsing, VirusTotal, ...).
 
     The single channel through which the engine touches the network.
-    Implementations live in infrastructure/, not in detection_engine/."""
+    Concrete implementations live outside ``detection_engine/`` so this
+    package stays pure and offline; none are wired in yet."""
 
     @property
     @abstractmethod

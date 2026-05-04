@@ -32,8 +32,10 @@ Every result includes the analysis scope, specific findings with evidence, and a
 │  │   Detection Engine    │ │
 │  │  ┌─────────────────┐  │ │
 │  │  │    Analyzers     │  │ │
-│  │  │ Header │ Sender  │  │ │
-│  │  │ URL    │ Content │  │ │
+│  │  │ Authentication   │  │ │
+│  │  │ Sender           │  │ │
+│  │  │ URL              │  │ │
+│  │  │ Content          │  │ │
 │  │  │ Attachment       │  │ │
 │  │  └─────────────────┘  │ │
 │  │  ┌─────────────────┐  │ │
@@ -62,11 +64,11 @@ The detection engine (`detection_engine/`) is a pure Python library with zero we
 
 | Analyzer | Category | Signals |
 |---|---|---|
-| **Authentication** | Authentication | SPF/DKIM/DMARC failures |
-| **Sender** | Sender identity | Freemail from "corporate" senders, cousin/typosquat domains, Reply-To mismatch, Return-Path mismatch |
+| **Authentication** | Authentication | SPF/DKIM/DMARC failures, plus blind-spot reporting for `none`/`temperror` results |
+| **Sender** | Sender identity | Cousin/typosquat domains, display-name impersonation, freemail with organizational display name, Reply-To mismatch, Return-Path mismatch |
 | **URL** | URL structure | Anchor/href mismatch, IP-literal hosts (IPv4 / IPv6) |
 | **Body content** | Body content | Urgency/pressure language, sensitive data requests, HTML forms with input fields |
-| **Attachment** | Attachment | Dangerous extensions (.exe, .scr, .js), double extensions (.pdf.exe), macro-enabled Office files, password-protected archive hints |
+| **Attachment** | Attachment | Dangerous extensions (.exe, .scr, .js, .html), double extensions (.pdf.exe), macro-enabled Office files, password-protected archive hints |
 
 ### Intel Sources
 
@@ -230,6 +232,14 @@ python -m pytest tests/ -v
       "summary": "URL contains IP address: http://192.168.1.100/verify-account",
       "confidence": 0.9,
       "score_contribution": 19.8
+    },
+    {
+      "id": "sensitive_data_request",
+      "category": "body_content",
+      "severity": "high",
+      "summary": "Sensitive data request detected: 'verify your identity'",
+      "confidence": 0.8,
+      "score_contribution": 17.6
     }
   ],
   "top_signals": [ "...same structure as signals, top 3 by score_contribution..." ],
@@ -268,6 +278,7 @@ python -m pytest tests/ -v
 | Zero-day attachment exploits | Requires sandbox execution |
 | Compromised legitimate accounts | Authentication passes; requires behavioral analysis over time |
 | QR code / image-only phishing | Requires OCR/vision capabilities |
+| Obfuscated HTML (CSS-hidden text, base64 sections, data: URI inlining) | Requires HTML rendering or deep heuristics; deliberately deferred to keep static analyzers explainable. See `docs/detection-policy.md` "Deferred Indicators" |
 
 ---
 

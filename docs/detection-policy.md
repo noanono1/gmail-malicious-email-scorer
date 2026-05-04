@@ -2,15 +2,17 @@
 
 ## Scope
 
-This system detects **mass phishing** using **static analysis only** — no sandboxing, no external API calls, no ML models. Every indicator is extracted from the email as received: headers, sender address, body text/HTML, and attachment metadata.
+This system detects **statically-observable indicators of malicious email** — no sandboxing, no external API calls, no ML models. Every indicator is extracted from the email as received: headers, sender address, body text/HTML, and attachment metadata.
 
-### Why mass phishing
+The indicator set covers mass phishing as the primary use case, with meaningful overlap into credential harvesting, malware delivery via attachments, and basic impersonation patterns (including some BEC and spear-phishing variants). Threats that require capabilities beyond static analysis — sandbox execution, user profiling, organizational context, threat-intel lookups — are explicitly out of scope and documented in "Deferred Indicators." The architecture supports adding them later via the `ThreatIntelSource` ABC.
 
-Email threats span a wide spectrum: mass phishing, spear phishing, BEC (business email compromise), malware delivery, credential harvesting, and spam/scam. We focus on mass phishing because:
+### Where this system is strongest
 
-- **Detectable statically** — mass phishing relies on repeatable patterns (spoofed domains, urgency language, deceptive links) rather than personalized social engineering.
-- **High coverage** — mass phishing accounts for the majority of phishing volume. A system that handles it well addresses the most common real-world threat.
-- **Bounded complexity** — other threat types require capabilities beyond static analysis (user profiling for spear phishing, sandbox execution for malware, organizational context for BEC). Scoping to mass phishing keeps the system focused and honest about its boundaries.
+Email threats span a wide spectrum: mass phishing, spear phishing, BEC (business email compromise), malware delivery, credential harvesting, and spam/scam. The indicators here are most effective against threats that share three properties:
+
+- **Statically detectable** — they leave repeatable artifacts (spoofed domains, deceptive links, dangerous attachments, urgency language) rather than relying purely on personalized social engineering.
+- **High volume** — mass phishing dominates real-world phishing traffic, and credential-harvesting and malware-delivery patterns overlap heavily with it. Catching these addresses most of what users actually receive.
+- **Bounded by the artifact** — what's in the email is sufficient to decide. Threats that need additional context (is this user a finance approver? does this attachment execute? has this domain been seen before?) are deliberately deferred, since static analysis cannot answer them honestly.
 
 ### Why static analysis only
 
@@ -130,6 +132,18 @@ These indicators examine attachment metadata without opening or executing files.
 | **ATTACH-3** | Macro-enabled Office format | .docm, .xlsm, .pptm, .dotm, .xltm, .potm — Office files with macros | HIGH | Strong — macro malware is a primary delivery vector | Moderate — some organizations still use macro-enabled templates | Check extension against macro-enabled Office MIME types |
 | **ATTACH-4** | Password-protected archive | Encrypted .zip/.rar mentioned in body | HIGH | Strong — used to evade scanning | Moderate — legit confidential docs use this too | Check for archive MIME types combined with body text mentioning "password" near attachment references |
 
+#### Open decision: `.html` / `.htm` severity
+
+`.html` and `.htm` sit on ATTACH-1 at **CRITICAL** with the rest of the dangerous-extension list. Unlike the other entries (which execute code natively on the OS), HTML files only run inside a browser and are routinely attached to legitimate mail (invoices, receipts, exported reports, newsletter archives). The risk is real — an HTML attachment can host a credential-harvesting form or a JavaScript redirect — but the false-positive rate is plausibly higher than for `.exe`/`.bat`/`.ps1`.
+
+Three defensible alternatives:
+
+1. **Keep CRITICAL** (current). Treat any HTML attachment as deliberate evasion, accept the FP risk on legitimate transactional mail.
+2. **Downgrade to HIGH or MEDIUM.** Acknowledges the FP risk; relies on `CONTENT-3` (HTML form in body) and `URL-1` (href↔display mismatch) to catch the attack pattern when the HTML is inlined.
+3. **Remove `.html`/`.htm` from ATTACH-1 entirely.** The credential-harvesting attack vector is already represented by CONTENT-3; the file-type-as-malware framing is a poor fit for HTML.
+
+**Decision (2026-05-04):** keep CRITICAL. This is an *open* decision, not a settled one — it must not be silently changed as part of unrelated cleanup. Any change here goes through its own patch with its own score-impact review (per the "surface detection-semantic changes explicitly" working rule).
+
 ---
 
 ## Deferred Indicators (with reasoning)
@@ -141,7 +155,7 @@ These indicators were evaluated and intentionally excluded from the initial scop
 | **Received chain analysis** | The Received header format is not standardized — each MTA writes it differently. Parsing is fragile and produces unreliable results. Effort-to-value ratio is poor | A robust multi-format parser with per-MTA heuristics |
 | **Domain age** | Requires WHOIS or RDAP lookup — an external network call that violates our static-analysis constraint | `ThreatIntelSource` implementation with WHOIS/RDAP client |
 | **URL destination check** | Requires HTTP requests to follow redirects — violates static-analysis constraint and introduces latency | `ThreatIntelSource` implementation with Safe Browsing API |
-| **Obfuscated HTML** | Base64-encoded sections, CSS tricks to hide text. Detecting these requires rendering or deep HTML analysis. Moderate effort for low commonality | HTML rendering engine or heuristic decoder |
+| **Obfuscated HTML** | CSS-hidden text (`font-size:0`, `color:white`, `display:none`), base64-encoded sections, `data:` URI inlining of phishing pages. Detecting these requires rendering or deep HTML analysis. Moderate effort for low commonality | HTML rendering engine or heuristic decoder |
 | **NLP tone analysis** | ML-based content classification. Entirely different system — requires training data, model serving, and introduces non-determinism | Trained classifier, inference infrastructure |
 | **QR code phishing** | Embedded QR codes pointing to malicious URLs. Requires image parsing — not available in static text analysis | Image processing library, QR decoder |
 | **Shortened URL detection** | Shorteners (bit.ly, t.co, tinyurl.com) hide the destination, but legitimate marketing, social media, and CRM tooling use them constantly. As a standalone signal the FP rate is too high to defend; the destination question it raises is already represented by the `URL_DESTINATION` blind spot, and is properly resolved by following the link in a sandbox or threat-intel service rather than by host-list matching | A `ThreatIntelSource` that resolves shorteners (or a Safe Browsing query on the resolved URL) |

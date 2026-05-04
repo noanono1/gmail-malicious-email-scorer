@@ -305,6 +305,8 @@ class SenderAnalyzer(BaseAnalyzer):
         # users routinely set a different reply address on personal mail.
         if sender_domain in _FREEMAIL_DOMAINS:
             return None
+        # TODO: also suppress when From local-part is `noreply`/`notifications`
+        # (Drive shares, GitHub, etc. — same for return_path_mismatch).
 
         return Signal(
             id="reply_to_mismatch",

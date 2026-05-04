@@ -50,8 +50,8 @@ Three analyzers covering the highest-value, lowest-FP-risk indicators.
 |---|---|
 | **File** | `detection_engine/analyzers/sender.py` |
 | **Category** | SENDER_IDENTITY |
-| **Signals** | SENDER-1 (cousin/lookalike domain → CRITICAL), SENDER-2 (freemail with org name → MEDIUM), SENDER-3 (From ≠ Reply-To → HIGH), SENDER-4 (Return-Path ≠ From domain → MEDIUM) |
-| **Notes** | Cousin domain: curated brand list (~40 domains), Levenshtein distance (threshold ≤2), character substitution normalization (1↔l, 0↔o, rn↔m, vl↔d, 5↔s). SENDER-4 whitelists known ESPs. |
+| **Signals** | SENDER-1 (cousin/lookalike domain → CRITICAL), SENDER-2 (freemail with org name → MEDIUM), SENDER-3 (From ≠ Reply-To → HIGH), SENDER-4 (Return-Path ≠ From domain → MEDIUM), SENDER-5 (display-name impersonation → HIGH) |
+| **Notes** | Cousin domain: curated brand list, length-scaled Levenshtein budget, visual-substitution normalization (1↔l, 0↔o, 5↔s, rn↔m, vv↔w, cl↔d), trusted-public-suffix allowlist for legitimate regional brand mail. SENDER-3/4 suppress same-org pairs, known ESPs, and freemail→freemail reply-to. SENDER-5 defers to SENDER-1 to avoid double-counting one impersonation, and uses an "any claimed brand matches the domain" rule so multi-token names don't false-positive. |
 
 ### 3. BodyContentAnalyzer
 
@@ -74,9 +74,9 @@ URL and attachment analysis. Full test suite. All 5 analyzers wired.
 |---|---|
 | **File** | `detection_engine/analyzers/url_structure.py` |
 | **Category** | URL_STRUCTURE |
-| **Signals** | URL-1 (href ≠ display text → CRITICAL), URL-2 (IP in URL → HIGH), URL-3 (shortened URL → LOW), URL-4 (excessive URL count → INFO) |
+| **Signals** | URL-1 (href ≠ display text → CRITICAL), URL-2 (IP in URL → HIGH) |
 | **Blind spot** | `URL_DESTINATION` whenever URLs are found in the email |
-| **Notes** | URL-1 only flags when display text looks like a URL (contains a dot, no spaces). Reports first 3 mismatches. |
+| **Notes** | URL-1 only flags when display text looks like a URL (contains a dot, no spaces). Reports first 3 mismatches. Shortened-URL detection and link-volume heuristics are intentionally out of scope — see `docs/detection-policy.md` "Deferred Indicators". |
 
 ### 5. AttachmentAnalyzer
 
@@ -163,6 +163,6 @@ Tier 4 — Future Extensions       ░░░░░░░░░░ OUT OF SCOPE
 | Item | Status |
 |---|---|
 | `infrastructure/` | Directory does not exist — needed for Safe Browsing intel source |
-| Blind spot gaps | `EMBEDDED_IMAGE`, `HTML_RENDERING`, `QR_CODE` defined but not emitted |
+| Blind spot gaps | `EMBEDDED_IMAGE` and `QR_CODE` are emitted by the structural catalog when an email contains images. `HTML_RENDERING` is defined in the enum but not yet emitted on HTML-bodied mail. |
 | Deploy backend | Railway deployment not yet done |
 | Demo emails | Need to send to test Gmail account before interview |
