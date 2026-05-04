@@ -211,7 +211,7 @@ python -m pytest tests/ -v
       "id": "dmarc_fail",
       "category": "authentication",
       "severity": "critical",
-      "evidence": "DMARC policy returned 'fail' for sender domain",
+      "summary": "DMARC policy returned 'fail' for sender domain",
       "confidence": 1.0,
       "score_contribution": 30.5
     },
@@ -219,7 +219,7 @@ python -m pytest tests/ -v
       "id": "cousin_domain",
       "category": "sender_identity",
       "severity": "critical",
-      "evidence": "Sender domain 'paypa1-support.com' resembles brand 'paypal'",
+      "summary": "Sender domain 'paypa1-support.com' resembles brand 'paypal'",
       "confidence": 1.0,
       "score_contribution": 35.0
     },
@@ -227,7 +227,7 @@ python -m pytest tests/ -v
       "id": "ip_address_in_url",
       "category": "url_structure",
       "severity": "high",
-      "evidence": "URL contains IP address: http://192.168.1.100/verify-account",
+      "summary": "URL contains IP address: http://192.168.1.100/verify-account",
       "confidence": 0.9,
       "score_contribution": 19.8
     }

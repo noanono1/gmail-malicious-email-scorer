@@ -83,8 +83,8 @@ class TestDangerousExtensions:
         output = analyzer.analyze(_make_email(attachments=attachments))
         signals = [s for s in output.signals if s.id == "dangerous_file_extension"]
         assert len(signals) == 1
-        assert "a.exe" in signals[0].evidence
-        assert "b.bat" in signals[0].evidence
+        assert "a.exe" in signals[0].summary
+        assert "b.bat" in signals[0].summary
 
 
 # ---------------------------------------------------------------------------
@@ -198,12 +198,6 @@ class TestBlindSpotsAndEdgeCases:
         output = analyzer.analyze(_make_email())
         assert len(output.signals) == 0
         assert len(output.blind_spots) == 0
-
-    def test_all_signals_have_zero_contribution(self, analyzer: AttachmentAnalyzer):
-        output = analyzer.analyze(_make_email(attachments=[_attachment("invoice.pdf.exe")]))
-        assert len(output.signals) > 0
-        assert all(s.score_contribution == 0.0 for s in output.signals)
-
 
 # ---------------------------------------------------------------------------
 # Real fixtures

@@ -4,8 +4,9 @@ import re
 
 from detection_engine.analyzers.base import BaseAnalyzer
 from detection_engine.domain.email import EmailData
-from detection_engine.domain.enums import BlindSpotArea, SignalCategory, SignalSeverity
-from detection_engine.domain.signals import BlindSpot, AnalysisOutput, Signal
+from detection_engine.domain.blind_spot_catalog import ATTACHMENT_CONTENT
+from detection_engine.domain.enums import SignalCategory, SignalSeverity
+from detection_engine.domain.signals import AnalysisOutput, Signal
 
 # TODO: .html/.htm are debatable as "dangerous" attachments. Unlike the other extensions
 # here (which execute code natively on the OS), HTML files only run in a browser and are
@@ -53,10 +54,6 @@ class AttachmentAnalyzer(BaseAnalyzer):
     def name(self) -> str:
         return "attachment_analyzer"
 
-    @property
-    def category(self) -> SignalCategory:
-        return SignalCategory.ATTACHMENT
-
     def analyze(self, email: EmailData) -> AnalysisOutput:
         if not email.attachments:
             return AnalysisOutput.empty()
@@ -68,15 +65,7 @@ class AttachmentAnalyzer(BaseAnalyzer):
         self._check_macro_enabled(email, signals)
         self._check_password_protected_archive(email, signals)
 
-        blind_spots = (
-            BlindSpot(
-                area=BlindSpotArea.ATTACHMENT_CONTENT,
-                reason="Attachment content not inspected — metadata-only analysis",
-                risk_note="File content could contain malicious code undetectable by extension checks",
-            ),
-        )
-
-        return AnalysisOutput(signals=tuple(signals), blind_spots=blind_spots)
+        return AnalysisOutput(signals=tuple(signals), blind_spots=(ATTACHMENT_CONTENT,))
 
     def _check_dangerous_extensions(
         self, email: EmailData, signals: list[Signal]
@@ -94,7 +83,7 @@ class AttachmentAnalyzer(BaseAnalyzer):
                     category=SignalCategory.ATTACHMENT,
                     severity=SignalSeverity.CRITICAL,
                     confidence=0.95,
-                    evidence=f"Dangerous file type: {', '.join(dangerous_files[:3])}",
+                    summary=f"Dangerous file type: {', '.join(dangerous_files[:3])}",
                 )
             )
 
@@ -116,7 +105,7 @@ class AttachmentAnalyzer(BaseAnalyzer):
                     category=SignalCategory.ATTACHMENT,
                     severity=SignalSeverity.CRITICAL,
                     confidence=1.0,
-                    evidence=f"Double extension masquerading: {', '.join(double_ext_files[:3])}",
+                    summary=f"Double extension masquerading: {', '.join(double_ext_files[:3])}",
                 )
             )
 
@@ -136,7 +125,7 @@ class AttachmentAnalyzer(BaseAnalyzer):
                     category=SignalCategory.ATTACHMENT,
                     severity=SignalSeverity.HIGH,
                     confidence=0.85,
-                    evidence=f"Macro-enabled document: {', '.join(macro_files[:3])}",
+                    summary=f"Macro-enabled document: {', '.join(macro_files[:3])}",
                 )
             )
 
@@ -160,6 +149,6 @@ class AttachmentAnalyzer(BaseAnalyzer):
                     category=SignalCategory.ATTACHMENT,
                     severity=SignalSeverity.HIGH,
                     confidence=0.8,
-                    evidence=f"Archive with password hint in body: {', '.join(archive_names[:3])}",
+                    summary=f"Archive with password hint in body: {', '.join(archive_names[:3])}",
                 )
             )

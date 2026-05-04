@@ -27,7 +27,7 @@ def _signal(
         category=category,
         severity=severity,
         confidence=confidence,
-        evidence="test signal",
+        summary="test signal",
     )
 
 
@@ -38,46 +38,47 @@ def _signal(
 
 class TestSingleSignalScoring:
     def test_critical_full_confidence(self):
-        signals = [_signal(SignalSeverity.CRITICAL)]
-        score, _ = score_signals(signals)
-        assert score == pytest.approx(SEVERITY_POINTS[SignalSeverity.CRITICAL])
+        report = score_signals([_signal(SignalSeverity.CRITICAL)])
+        assert report.final_score == pytest.approx(SEVERITY_POINTS[SignalSeverity.CRITICAL])
 
     def test_high_full_confidence(self):
-        signals = [_signal(SignalSeverity.HIGH)]
-        score, _ = score_signals(signals)
-        assert score == pytest.approx(SEVERITY_POINTS[SignalSeverity.HIGH])
+        report = score_signals([_signal(SignalSeverity.HIGH)])
+        assert report.final_score == pytest.approx(SEVERITY_POINTS[SignalSeverity.HIGH])
 
     def test_medium_full_confidence(self):
-        signals = [_signal(SignalSeverity.MEDIUM)]
-        score, _ = score_signals(signals)
-        assert score == pytest.approx(SEVERITY_POINTS[SignalSeverity.MEDIUM])
+        report = score_signals([_signal(SignalSeverity.MEDIUM)])
+        assert report.final_score == pytest.approx(SEVERITY_POINTS[SignalSeverity.MEDIUM])
 
     def test_low_full_confidence(self):
-        signals = [_signal(SignalSeverity.LOW)]
-        score, _ = score_signals(signals)
-        assert score == pytest.approx(SEVERITY_POINTS[SignalSeverity.LOW])
+        report = score_signals([_signal(SignalSeverity.LOW)])
+        assert report.final_score == pytest.approx(SEVERITY_POINTS[SignalSeverity.LOW])
 
     def test_info_contributes_zero(self):
-        signals = [_signal(SignalSeverity.INFO)]
-        score, _ = score_signals(signals)
-        assert score == 0.0
+        report = score_signals([_signal(SignalSeverity.INFO)])
+        assert report.final_score == 0.0
 
     def test_confidence_scales_contribution(self):
-        signals = [_signal(SignalSeverity.HIGH, confidence=0.5)]
-        score, _ = score_signals(signals)
-        assert score == pytest.approx(SEVERITY_POINTS[SignalSeverity.HIGH] * 0.5)
+        report = score_signals([_signal(SignalSeverity.HIGH, confidence=0.5)])
+        assert report.final_score == pytest.approx(SEVERITY_POINTS[SignalSeverity.HIGH] * 0.5)
 
     def test_no_signals(self):
-        score, categories = score_signals([])
-        assert score == 0.0
-        assert len(categories) == 0
+        report = score_signals([])
+        assert report.final_score == 0.0
+        assert len(report.active_categories) == 0
+        assert report.scored_signals == ()
 
-    def test_contribution_stored_on_signal(self):
+    def test_contribution_reported_per_signal(self):
         signal = _signal(SignalSeverity.CRITICAL)
-        score_signals([signal])
-        assert signal.score_contribution == pytest.approx(
+        report = score_signals([signal])
+        assert report.scored_signals[0].signal is signal
+        assert report.scored_signals[0].contribution == pytest.approx(
             SEVERITY_POINTS[SignalSeverity.CRITICAL]
         )
+
+    def test_signal_is_not_mutated(self):
+        signal = _signal(SignalSeverity.CRITICAL)
+        score_signals([signal])
+        assert not hasattr(signal, "score_contribution")
 
 
 # ---------------------------------------------------------------------------
@@ -89,7 +90,7 @@ class TestWithinCategoryAttenuation:
     def test_second_signal_attenuated(self):
         s1 = _signal(SignalSeverity.CRITICAL)
         s2 = _signal(SignalSeverity.CRITICAL)
-        score_signals([s1, s2])
+        report = score_signals([s1, s2])
 
         base = SEVERITY_POINTS[SignalSeverity.CRITICAL]
         expected_s1 = base
@@ -101,12 +102,12 @@ class TestWithinCategoryAttenuation:
             expected_s1 *= scale
             expected_s2 *= scale
 
-        assert s1.score_contribution == pytest.approx(expected_s1)
-        assert s2.score_contribution == pytest.approx(expected_s2)
+        assert report.scored_signals[0].contribution == pytest.approx(expected_s1)
+        assert report.scored_signals[1].contribution == pytest.approx(expected_s2)
 
     def test_third_signal_attenuated_more(self):
         signals = [_signal(SignalSeverity.HIGH) for _ in range(3)]
-        score_signals(signals)
+        report = score_signals(signals)
 
         base = SEVERITY_POINTS[SignalSeverity.HIGH]
         expected_raw = [base / (WITHIN_CATEGORY_ATTENUATION ** k) for k in range(3)]
@@ -116,15 +117,21 @@ class TestWithinCategoryAttenuation:
             scale = CATEGORY_CAP / raw_total
             expected_raw = [e * scale for e in expected_raw]
 
-        for signal, expected in zip(signals, expected_raw):
-            assert signal.score_contribution == pytest.approx(expected)
+        for scored, expected in zip(report.scored_signals, expected_raw):
+            assert scored.contribution == pytest.approx(expected)
 
-    def test_sorting_highest_first(self):
+    def test_strongest_severity_keeps_largest_contribution(self):
+        # Input order is irrelevant to attenuation: scoring sorts by base
+        # contribution within a category, so CRITICAL gets position 0
+        # regardless of where it appears in the input.
         low = _signal(SignalSeverity.LOW)
         critical = _signal(SignalSeverity.CRITICAL)
-        score_signals([low, critical])
+        report = score_signals([low, critical])
 
-        assert critical.score_contribution > low.score_contribution
+        contribution_by_signal = {
+            scored.signal: scored.contribution for scored in report.scored_signals
+        }
+        assert contribution_by_signal[critical] > contribution_by_signal[low]
 
 
 # ---------------------------------------------------------------------------
@@ -135,27 +142,26 @@ class TestWithinCategoryAttenuation:
 class TestCategoryCap:
     def test_many_signals_capped(self):
         signals = [_signal(SignalSeverity.CRITICAL) for _ in range(10)]
-        score, _ = score_signals(signals)
-        assert score == pytest.approx(CATEGORY_CAP)
+        report = score_signals(signals)
+        assert report.final_score == pytest.approx(CATEGORY_CAP)
 
     def test_cap_preserves_relative_proportions(self):
         s1 = _signal(SignalSeverity.CRITICAL)
         s2 = _signal(SignalSeverity.MEDIUM)
-        score_signals([s1, s2])
+        report = score_signals([s1, s2])
 
         base_critical = SEVERITY_POINTS[SignalSeverity.CRITICAL]
         base_medium = SEVERITY_POINTS[SignalSeverity.MEDIUM] / WITHIN_CATEGORY_ATTENUATION
         raw_total = base_critical + base_medium
 
         if raw_total > CATEGORY_CAP:
-            assert s1.score_contribution / s2.score_contribution == pytest.approx(
-                base_critical / base_medium
-            )
+            c1 = report.scored_signals[0].contribution
+            c2 = report.scored_signals[1].contribution
+            assert c1 / c2 == pytest.approx(base_critical / base_medium)
 
     def test_single_critical_below_cap(self):
-        signals = [_signal(SignalSeverity.CRITICAL)]
-        score, _ = score_signals(signals)
-        assert score < CATEGORY_CAP
+        report = score_signals([_signal(SignalSeverity.CRITICAL)])
+        assert report.final_score < CATEGORY_CAP
 
 
 # ---------------------------------------------------------------------------
@@ -167,13 +173,13 @@ class TestCrossCategoryBoost:
     def test_two_categories_boosted(self):
         auth = _signal(SignalSeverity.HIGH, category=SignalCategory.AUTHENTICATION)
         body = _signal(SignalSeverity.HIGH, category=SignalCategory.BODY_CONTENT)
-        score, categories = score_signals([auth, body])
+        report = score_signals([auth, body])
 
         base = SEVERITY_POINTS[SignalSeverity.HIGH]
         raw_total = base * 2
         expected = raw_total * (1.0 + CROSS_CATEGORY_BOOST)
-        assert score == pytest.approx(expected)
-        assert len(categories) == 2
+        assert report.final_score == pytest.approx(expected)
+        assert len(report.active_categories) == 2
 
     def test_three_categories_boosted_more(self):
         signals = [
@@ -181,26 +187,25 @@ class TestCrossCategoryBoost:
             _signal(SignalSeverity.HIGH, category=SignalCategory.BODY_CONTENT),
             _signal(SignalSeverity.HIGH, category=SignalCategory.URL_STRUCTURE),
         ]
-        score, categories = score_signals(signals)
+        report = score_signals(signals)
 
         base = SEVERITY_POINTS[SignalSeverity.HIGH]
         raw_total = base * 3
         expected = raw_total * (1.0 + CROSS_CATEGORY_BOOST * 2)
-        assert score == pytest.approx(expected)
-        assert len(categories) == 3
+        assert report.final_score == pytest.approx(expected)
+        assert len(report.active_categories) == 3
 
     def test_single_category_no_boost(self):
-        signals = [_signal(SignalSeverity.HIGH)]
-        score, _ = score_signals(signals)
-        assert score == pytest.approx(SEVERITY_POINTS[SignalSeverity.HIGH])
+        report = score_signals([_signal(SignalSeverity.HIGH)])
+        assert report.final_score == pytest.approx(SEVERITY_POINTS[SignalSeverity.HIGH])
 
     def test_info_category_not_counted(self):
         auth = _signal(SignalSeverity.HIGH, category=SignalCategory.AUTHENTICATION)
         info = _signal(SignalSeverity.INFO, category=SignalCategory.URL_STRUCTURE)
-        score, categories = score_signals([auth, info])
+        report = score_signals([auth, info])
 
-        assert score == pytest.approx(SEVERITY_POINTS[SignalSeverity.HIGH])
-        assert SignalCategory.URL_STRUCTURE not in categories
+        assert report.final_score == pytest.approx(SEVERITY_POINTS[SignalSeverity.HIGH])
+        assert SignalCategory.URL_STRUCTURE not in report.active_categories
 
     def test_score_clamped_to_100(self):
         signals = [
@@ -208,8 +213,8 @@ class TestCrossCategoryBoost:
             for cat in SignalCategory
         ]
         signals += [_signal(SignalSeverity.HIGH, category=cat) for cat in SignalCategory]
-        score, _ = score_signals(signals)
-        assert score <= 100.0
+        report = score_signals(signals)
+        assert report.final_score <= 100.0
 
 
 # ---------------------------------------------------------------------------
@@ -250,19 +255,16 @@ class TestVerdictClassification:
 
 class TestScoringToVerdict:
     def test_single_critical_is_likely_malicious(self):
-        signals = [_signal(SignalSeverity.CRITICAL)]
-        score, _ = score_signals(signals)
-        assert classify_verdict(score) == Verdict.LIKELY_MALICIOUS
+        report = score_signals([_signal(SignalSeverity.CRITICAL)])
+        assert classify_verdict(report.final_score) == Verdict.LIKELY_MALICIOUS
 
     def test_single_high_is_suspicious(self):
-        signals = [_signal(SignalSeverity.HIGH)]
-        score, _ = score_signals(signals)
-        assert classify_verdict(score) == Verdict.SUSPICIOUS
+        report = score_signals([_signal(SignalSeverity.HIGH)])
+        assert classify_verdict(report.final_score) == Verdict.SUSPICIOUS
 
     def test_single_medium_is_safe(self):
-        signals = [_signal(SignalSeverity.MEDIUM)]
-        score, _ = score_signals(signals)
-        assert classify_verdict(score) == Verdict.SAFE
+        report = score_signals([_signal(SignalSeverity.MEDIUM)])
+        assert classify_verdict(report.final_score) == Verdict.SAFE
 
     def test_convergence_pushes_verdict_up(self):
         auth_critical = _signal(
@@ -271,10 +273,10 @@ class TestScoringToVerdict:
         body_critical = _signal(
             SignalSeverity.CRITICAL, category=SignalCategory.BODY_CONTENT
         )
-        score, _ = score_signals([auth_critical, body_critical])
-        assert classify_verdict(score) == Verdict.MALICIOUS
+        report = score_signals([auth_critical, body_critical])
+        assert classify_verdict(report.final_score) == Verdict.MALICIOUS
 
     def test_single_category_cannot_reach_malicious(self):
         signals = [_signal(SignalSeverity.CRITICAL) for _ in range(20)]
-        score, _ = score_signals(signals)
-        assert classify_verdict(score) != Verdict.MALICIOUS
+        report = score_signals(signals)
+        assert classify_verdict(report.final_score) != Verdict.MALICIOUS

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 from detection_engine.domain.enums import SignalCategory, SignalSeverity, Verdict
-from detection_engine.domain.signals import Signal
+from detection_engine.domain.signals import ScoredSignal, Signal
 
 SEVERITY_POINTS: dict[SignalSeverity, float] = {
     SignalSeverity.INFO: 0.0,
@@ -43,45 +45,48 @@ tier whose bound the score meets. Tiers chosen so a typical legitimate email
 lands well below 15 and an obvious phishing campaign lands above 65."""
 
 
-def score_signals(signals: list[Signal]) -> tuple[float, frozenset[SignalCategory]]:
-    """Score a list of signals. Returns (final_score, active_categories).
+@dataclass(frozen=True)
+class ScoringReport:
+    """Pure result of one scoring run over a set of Signals.
 
-    Mutates each signal's score_contribution in place — this is the one
-    documented mutable field on Signal (see domain/signals.py)."""
-    signals_by_category: dict[SignalCategory, list[Signal]] = defaultdict(list)
-    for signal in signals:
-        signals_by_category[signal.category].append(signal)
+    `scored_signals` preserves the input order — callers can map back to
+    their original sequence by index. Per-signal contribution is
+    post-attenuation and post-cap, but does NOT include the cross-category
+    boost; the boost is folded into `final_score` only."""
 
-    category_totals: dict[SignalCategory, float] = {}
+    final_score: float
+    active_categories: frozenset[SignalCategory]
+    scored_signals: tuple[ScoredSignal, ...]
 
-    for category, category_signals in signals_by_category.items():
-        category_signals.sort(
-            key=lambda signal: SEVERITY_POINTS[signal.severity] * signal.confidence,
-            reverse=True,
-        )
-        category_running_total = 0.0
-        for position, signal in enumerate(category_signals):
-            base_points = SEVERITY_POINTS[signal.severity] * signal.confidence
-            contribution = base_points / (WITHIN_CATEGORY_ATTENUATION ** position)
-            signal.score_contribution = contribution
-            category_running_total += contribution
 
-        if category_running_total > CATEGORY_CAP:
-            cap_scale = CATEGORY_CAP / category_running_total
-            for signal in category_signals:
-                signal.score_contribution *= cap_scale
-            category_running_total = CATEGORY_CAP
+def score_signals(signals: Sequence[Signal]) -> ScoringReport:
+    """Score a list of signals. Pure — does not mutate the inputs.
 
-        category_totals[category] = category_running_total
+    Per-category: signals are sorted by base contribution (severity points ×
+    confidence) descending, then attenuated by position, then the category
+    total is capped at CATEGORY_CAP (scaling members proportionally).
+    Per-run: the final score is the sum of category totals multiplied by the
+    cross-category boost, clamped to [0, 100]."""
+    contributions = _per_signal_contributions(signals)
+    category_totals = _category_totals(signals, contributions)
 
     raw_total = sum(category_totals.values())
     active_categories = frozenset(
-        category for category, category_total in category_totals.items() if category_total > 0
+        category for category, total in category_totals.items() if total > 0
     )
     multiplier = 1.0 + CROSS_CATEGORY_BOOST * max(0, len(active_categories) - 1)
     final_score = _clamp(raw_total * multiplier, 0.0, 100.0)
 
-    return final_score, active_categories
+    scored_signals = tuple(
+        ScoredSignal(signal=signal, contribution=contributions[index])
+        for index, signal in enumerate(signals)
+    )
+
+    return ScoringReport(
+        final_score=final_score,
+        active_categories=active_categories,
+        scored_signals=scored_signals,
+    )
 
 
 def classify_verdict(score_value: float) -> Verdict:
@@ -90,6 +95,50 @@ def classify_verdict(score_value: float) -> Verdict:
         if score_value >= threshold:
             return verdict
     return Verdict.SAFE
+
+
+def _per_signal_contributions(signals: Sequence[Signal]) -> dict[int, float]:
+    """Compute each signal's contribution, keyed by its index in the input.
+
+    Within each category: sort by base contribution descending, attenuate by
+    position, then scale all members so the category total does not exceed
+    CATEGORY_CAP."""
+    indexed_by_category: dict[SignalCategory, list[tuple[int, Signal]]] = defaultdict(list)
+    for index, signal in enumerate(signals):
+        indexed_by_category[signal.category].append((index, signal))
+
+    contributions: dict[int, float] = {}
+
+    for category_signals in indexed_by_category.values():
+        category_signals.sort(
+            key=lambda indexed_signal: _base_points(indexed_signal[1]),
+            reverse=True,
+        )
+        category_total = 0.0
+        for position, (index, signal) in enumerate(category_signals):
+            contribution = _base_points(signal) / (WITHIN_CATEGORY_ATTENUATION ** position)
+            contributions[index] = contribution
+            category_total += contribution
+
+        if category_total > CATEGORY_CAP:
+            cap_scale = CATEGORY_CAP / category_total
+            for index, _ in category_signals:
+                contributions[index] *= cap_scale
+
+    return contributions
+
+
+def _category_totals(
+    signals: Sequence[Signal], contributions: dict[int, float]
+) -> dict[SignalCategory, float]:
+    totals: dict[SignalCategory, float] = defaultdict(float)
+    for index, signal in enumerate(signals):
+        totals[signal.category] += contributions[index]
+    return totals
+
+
+def _base_points(signal: Signal) -> float:
+    return SEVERITY_POINTS[signal.severity] * signal.confidence
 
 
 def _clamp(value: float, minimum: float, maximum: float) -> float:

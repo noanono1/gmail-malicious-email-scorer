@@ -26,7 +26,7 @@ End-to-end wiring: Gmail Add-on → Backend → hardcoded SAFE → Card UI.
 - Analyzers never make network calls; intel sources are the only network channel
 - Analyzer crashes raise `AnalyzerCrashed` (fail-fast); intel source crashes degrade into blind spots
 - `EmailHeaders` constructed from `Sequence[tuple[str, str]]`, never `dict` (preserves repeated headers)
-- Scoring: `Signal.score_contribution` is the one mutable field, written only by `score_signals()`
+- Scoring: `Signal` is immutable; `score_signals()` returns a `ScoringReport` with per-run `ScoredSignal(signal, contribution)` pairs
 
 ---
 

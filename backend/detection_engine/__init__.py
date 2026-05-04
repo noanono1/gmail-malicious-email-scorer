@@ -7,7 +7,7 @@ from detection_engine.domain.enums import (
     Verdict,
 )
 from detection_engine.domain.exceptions import AnalyzerCrashed
-from detection_engine.domain.signals import AnalysisOutput, BlindSpot, Signal
+from detection_engine.domain.signals import AnalysisOutput, BlindSpot, ScoredSignal, Signal
 from detection_engine.domain.verdict import AnalysisResult, AnalysisScope
 from detection_engine.engine import DetectionEngine
 
@@ -22,6 +22,7 @@ __all__ = [
     "EmailData",
     "EmailHeaders",
     "IntelSourceType",
+    "ScoredSignal",
     "Signal",
     "SignalCategory",
     "SignalSeverity",

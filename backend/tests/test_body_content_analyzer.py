@@ -217,23 +217,6 @@ class TestHtmlForm:
 
 
 # ---------------------------------------------------------------------------
-# Score contribution
-# ---------------------------------------------------------------------------
-
-
-class TestScoreContribution:
-    def test_all_signals_have_zero_contribution(self, analyzer: BodyContentAnalyzer):
-        email = _make_email(
-            subject="Immediate action required",
-            body_text="Verify your identity immediately. Account will be suspended.",
-            body_html='<form action="x"><input type="text"></form>',
-        )
-        output = analyzer.analyze(email)
-        assert len(output.signals) == 3
-        assert all(s.score_contribution == 0.0 for s in output.signals)
-
-
-# ---------------------------------------------------------------------------
 # Real fixtures
 # ---------------------------------------------------------------------------
 

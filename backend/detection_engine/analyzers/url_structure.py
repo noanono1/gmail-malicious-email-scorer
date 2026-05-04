@@ -6,8 +6,9 @@ from urllib.parse import urlparse
 
 from detection_engine.analyzers.base import BaseAnalyzer
 from detection_engine.domain.email import EmailData
-from detection_engine.domain.enums import BlindSpotArea, SignalCategory, SignalSeverity
-from detection_engine.domain.signals import BlindSpot, AnalysisOutput, Signal
+from detection_engine.domain.blind_spot_catalog import URL_DESTINATION
+from detection_engine.domain.enums import SignalCategory, SignalSeverity
+from detection_engine.domain.signals import AnalysisOutput, Signal
 
 _SHORTENER_DOMAINS: frozenset[str] = frozenset({
     "bit.ly",
@@ -84,10 +85,6 @@ class UrlStructureAnalyzer(BaseAnalyzer):
     def name(self) -> str:
         return "url_structure_analyzer"
 
-    @property
-    def category(self) -> SignalCategory:
-        return SignalCategory.URL_STRUCTURE
-
     def analyze(self, email: EmailData) -> AnalysisOutput:
         html_links: list[tuple[str, str]] = []
         if email.body_html:
@@ -105,22 +102,13 @@ class UrlStructureAnalyzer(BaseAnalyzer):
             return AnalysisOutput.empty()
 
         signals: list[Signal] = []
-        blind_spots: list[BlindSpot] = []
 
         self._check_href_display_mismatch(html_links, signals)
         self._check_ip_in_url(all_links, signals)
         self._check_shortened_urls(all_links, signals)
         self._check_excessive_urls(all_links, signals)
 
-        blind_spots.append(
-            BlindSpot(
-                area=BlindSpotArea.URL_DESTINATION,
-                reason="URLs found but not followed — cannot verify destination content",
-                risk_note="A clean-looking domain could redirect to a phishing page",
-            )
-        )
-
-        return AnalysisOutput(signals=tuple(signals), blind_spots=tuple(blind_spots))
+        return AnalysisOutput(signals=tuple(signals), blind_spots=(URL_DESTINATION,))
 
     def _check_href_display_mismatch(
         self, links: list[tuple[str, str]], signals: list[Signal]
@@ -141,7 +129,7 @@ class UrlStructureAnalyzer(BaseAnalyzer):
                     category=SignalCategory.URL_STRUCTURE,
                     severity=SignalSeverity.CRITICAL,
                     confidence=1.0,
-                    evidence=f"Link text mismatches href: {'; '.join(mismatched[:3])}",
+                    summary=f"Link text mismatches href: {'; '.join(mismatched[:3])}",
                 )
             )
 
@@ -162,7 +150,7 @@ class UrlStructureAnalyzer(BaseAnalyzer):
                     category=SignalCategory.URL_STRUCTURE,
                     severity=SignalSeverity.HIGH,
                     confidence=0.9,
-                    evidence=f"URL contains IP address: {ip_urls[0]}",
+                    summary=f"URL contains IP address: {ip_urls[0]}",
                 )
             )
 
@@ -182,7 +170,7 @@ class UrlStructureAnalyzer(BaseAnalyzer):
                     category=SignalCategory.URL_STRUCTURE,
                     severity=SignalSeverity.LOW,
                     confidence=0.7,
-                    evidence=f"Shortened URL detected: {shortened[0]}",
+                    summary=f"Shortened URL detected: {shortened[0]}",
                 )
             )
 
@@ -197,6 +185,6 @@ class UrlStructureAnalyzer(BaseAnalyzer):
                     category=SignalCategory.URL_STRUCTURE,
                     severity=SignalSeverity.INFO,
                     confidence=0.5,
-                    evidence=f"{len(unique_domains)} unique external domains linked",
+                    summary=f"{len(unique_domains)} unique external domains linked",
                 )
             )

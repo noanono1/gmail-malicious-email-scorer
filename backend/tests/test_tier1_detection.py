@@ -25,6 +25,7 @@ from tests.email_fixtures import (
 
 
 def _build_engine() -> DetectionEngine:
+    # Tier 1 contract is analyzer-driven; intel sources are out of scope here.
     return DetectionEngine(
         analyzers=[
             AuthenticationAnalyzer(),
@@ -33,6 +34,7 @@ def _build_engine() -> DetectionEngine:
             UrlStructureAnalyzer(),
             AttachmentAnalyzer(),
         ],
+        intel_sources=[],
     )
 
 

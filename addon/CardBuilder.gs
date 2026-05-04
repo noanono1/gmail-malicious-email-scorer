@@ -68,7 +68,7 @@ function buildSummarySection(explanation) {
 }
 
 /**
- * Top signals with severity, category, evidence, and contribution.
+ * Top signals with severity, category, summary, and contribution.
  */
 function buildFindingsSection(signals) {
   var section = CardService.newCardSection().setHeader("Top Findings");
@@ -90,7 +90,7 @@ function buildSignalWidget(signal) {
 
   return CardService.newDecoratedText()
     .setTopLabel(categoryLabel + "  ·  " + severityLabel)
-    .setText(signal.evidence)
+    .setText(signal.summary)
     .setWrapText(true)
     .setBottomLabel(contribution);
 }

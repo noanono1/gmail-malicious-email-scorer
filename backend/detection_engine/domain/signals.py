@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
+from detection_engine.domain.email import EmailData
 from detection_engine.domain.enums import (
     BlindSpotArea,
     SignalCategory,
@@ -9,20 +11,42 @@ from detection_engine.domain.enums import (
 )
 
 
-@dataclass
+@dataclass(frozen=True)
 class Signal:
+    """An interpreted finding emitted by an analyzer or intel source.
+
+    A Signal is a graded accusation: category, severity, and confidence are
+    already decided by the time the engine sees it. The `summary` is a
+    human-readable description of what was observed, not raw evidence —
+    keep it short and renderable as-is.
+
+    Signals are immutable. Per-run scoring data lives on ScoredSignal."""
+
     id: str
     category: SignalCategory
     severity: SignalSeverity
-    evidence: str
+    summary: str
     confidence: float
-    score_contribution: float = 0.0
 
     def __post_init__(self) -> None:
         if not 0.0 <= self.confidence <= 1.0:
             raise ValueError(f"confidence must be in [0,1], got {self.confidence}")
-        if self.score_contribution < 0.0:
-            raise ValueError("score_contribution must be non-negative")
+
+
+@dataclass(frozen=True)
+class ScoredSignal:
+    """A Signal paired with its contribution from one scoring run.
+
+    Contribution depends on what other signals were present (attenuation,
+    category cap, cross-category boost), so it is a property of the run,
+    not of the signal."""
+
+    signal: Signal
+    contribution: float
+
+    def __post_init__(self) -> None:
+        if self.contribution < 0.0:
+            raise ValueError(f"contribution must be non-negative, got {self.contribution}")
 
 
 @dataclass(frozen=True)
@@ -30,6 +54,7 @@ class BlindSpot:
     area: BlindSpotArea
     reason: str
     risk_note: str
+    applies: Callable[[EmailData], bool] | None = None
 
 
 @dataclass(frozen=True)

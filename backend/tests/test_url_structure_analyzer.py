@@ -181,13 +181,6 @@ class TestBlindSpotsAndEdgeCases:
         output = analyzer.analyze(_make_email(body_html="", body_text=""))
         assert len(output.signals) == 0
 
-    def test_all_signals_have_zero_contribution(self, analyzer: UrlStructureAnalyzer):
-        html = '<a href="http://192.168.1.1/x">https://paypal.com</a>'
-        output = analyzer.analyze(_make_email(body_html=html))
-        assert len(output.signals) > 0
-        assert all(s.score_contribution == 0.0 for s in output.signals)
-
-
 # ---------------------------------------------------------------------------
 # Real fixtures
 # ---------------------------------------------------------------------------

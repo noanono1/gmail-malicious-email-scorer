@@ -11,12 +11,13 @@ from detection_engine import (
     EmailData,
     EmailHeaders,
     IntelSourceType,
-    Signal,
+    ScoredSignal,
     SignalCategory,
     SignalSeverity,
     Verdict,
 )
 
+# DTOs / API schemas
 
 # ---------------------------------------------------------------------------
 # Request models — what the Add-on sends us
@@ -86,10 +87,12 @@ class AnalyzeRequest(BaseModel):
 
 
 class SignalResponse(BaseModel):
+    """Wire shape for a scored signal — flattens ScoredSignal for the addon."""
+
     id: str
     category: SignalCategory
     severity: SignalSeverity
-    evidence: str
+    summary: str
     confidence: float
     score_contribution: float
 
@@ -122,22 +125,22 @@ class AnalyzeResponse(BaseModel):
     def from_domain(cls, analysis_result: AnalysisResult) -> AnalyzeResponse:
         """Convert domain AnalysisResult to API response."""
 
-        def _signal_to_response(signal: Signal) -> SignalResponse:
+        def _scored_to_response(scored: ScoredSignal) -> SignalResponse:
             return SignalResponse(
-                id=signal.id,
-                category=signal.category,
-                severity=signal.severity,
-                evidence=signal.evidence,
-                confidence=signal.confidence,
-                score_contribution=signal.score_contribution,
+                id=scored.signal.id,
+                category=scored.signal.category,
+                severity=scored.signal.severity,
+                summary=scored.signal.summary,
+                confidence=scored.signal.confidence,
+                score_contribution=scored.contribution,
             )
 
         return cls(
             verdict=analysis_result.verdict,
             score=analysis_result.score,
             explanation=analysis_result.explanation,
-            signals=[_signal_to_response(signal) for signal in analysis_result.signals],
-            top_signals=[_signal_to_response(signal) for signal in analysis_result.top_signals],
+            signals=[_scored_to_response(scored) for scored in analysis_result.signals],
+            top_signals=[_scored_to_response(scored) for scored in analysis_result.top_signals],
             active_categories=sorted(analysis_result.active_categories, key=lambda c: c.value),
             blind_spots=[
                 BlindSpotResponse(

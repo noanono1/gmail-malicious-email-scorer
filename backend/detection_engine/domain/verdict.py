@@ -7,7 +7,7 @@ from detection_engine.domain.enums import (
     SignalCategory,
     Verdict,
 )
-from detection_engine.domain.signals import BlindSpot, Signal
+from detection_engine.domain.signals import BlindSpot, ScoredSignal
 
 
 @dataclass(frozen=True)
@@ -25,8 +25,8 @@ class AnalysisScope:
 class AnalysisResult:
     verdict: Verdict
     score: float
-    signals: tuple[Signal, ...]
-    top_signals: tuple[Signal, ...]
+    signals: tuple[ScoredSignal, ...]
+    top_signals: tuple[ScoredSignal, ...]
     active_categories: frozenset[SignalCategory]
     blind_spots: tuple[BlindSpot, ...]
     scope: AnalysisScope

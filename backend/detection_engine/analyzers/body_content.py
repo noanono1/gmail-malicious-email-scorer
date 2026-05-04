@@ -102,10 +102,6 @@ class BodyContentAnalyzer(BaseAnalyzer):
     def name(self) -> str:
         return "body_content_analyzer"
 
-    @property
-    def category(self) -> SignalCategory:
-        return SignalCategory.BODY_CONTENT
-
     def analyze(self, email: EmailData) -> AnalysisOutput:
         html_text = _strip_html_tags(email.body_html) if email.body_html else ""
         text = f"{email.subject} {email.body_text} {html_text}".lower()
@@ -128,7 +124,7 @@ class BodyContentAnalyzer(BaseAnalyzer):
                 category=SignalCategory.BODY_CONTENT,
                 severity=SignalSeverity.MEDIUM,
                 confidence=min(0.5 + 0.15 * len(matched), 1.0),
-                evidence=f"Urgency/threat language detected: {', '.join(repr(p) for p in matched)}",
+                summary=f"Urgency/threat language detected: {', '.join(repr(p) for p in matched)}",
             )
         )
 
@@ -145,7 +141,7 @@ class BodyContentAnalyzer(BaseAnalyzer):
                 category=SignalCategory.BODY_CONTENT,
                 severity=SignalSeverity.HIGH,
                 confidence=min(0.6 + 0.2 * len(matched), 1.0),
-                evidence=f"Sensitive data request detected: {', '.join(repr(p) for p in matched)}",
+                summary=f"Sensitive data request detected: {', '.join(repr(p) for p in matched)}",
             )
         )
 
@@ -160,6 +156,6 @@ class BodyContentAnalyzer(BaseAnalyzer):
                     category=SignalCategory.BODY_CONTENT,
                     severity=SignalSeverity.CRITICAL,
                     confidence=1.0,
-                    evidence="HTML <form> with input fields found in email body",
+                    summary="HTML <form> with input fields found in email body",
                 )
             )
