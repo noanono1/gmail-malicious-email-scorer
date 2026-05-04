@@ -31,10 +31,16 @@ class HeaderEntry(BaseModel):
     value: str = Field(max_length=16_384, description="Header field value")
 
 
+# Sanity bound on reported attachment size. Gmail caps individual attachments
+# at 25 MB; 25 MiB gives us byte-aligned headroom while still rejecting absurd
+# values (e.g. a malicious client claiming a 100 GB attachment).
+_MAX_ATTACHMENT_SIZE_BYTES = 26_214_400
+
+
 class AttachmentRequest(BaseModel):
     filename: str = Field(max_length=512)
     mime_type: str = Field(max_length=256)
-    size_bytes: int = Field(ge=0)
+    size_bytes: int = Field(ge=0, le=_MAX_ATTACHMENT_SIZE_BYTES)
     sha256: str | None = Field(
         default=None, min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$",
     )

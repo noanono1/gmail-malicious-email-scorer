@@ -121,12 +121,15 @@ Thresholds are calibrated against test cases including both attack patterns and 
 
 | Concern | Mitigation |
 |---|---|
-| Untrusted email content | Pydantic models enforce field limits (max lengths, allowed values). HTML is parsed but never rendered or eval'd. |
+| Untrusted email content | Pydantic models enforce field limits (max lengths, allowed values, attachment size ≤ 25 MiB). HTML is parsed but never rendered or eval'd. |
 | URL safety | URLs are parsed and pattern-matched but never followed. No outbound connections to attacker infrastructure. |
 | Secrets | Environment variables via `.env` (backend) and `PropertiesService` (Apps Script). |
 | Data retention | No email content persisted beyond request lifecycle. Stateless by design. |
 | Logging | Analysis metadata only (timing, analyzer names, verdict). Never email content. |
 | Backend access | HMAC-signed requests with timestamp replay protection. |
+| Request size | Hard cap on the raw request body (default 1 MiB, configurable). Oversized requests are rejected with 413 before HMAC reads the body. |
+| API schema visibility | `/docs`, `/redoc`, and `/openapi.json` are unconditionally disabled. The API surface is not published. |
+| Rate limiting / DoS | Per-request bounds are enforced in-app (HMAC, timestamp drift, body-size cap, Pydantic field limits). Volumetric protection — rate limiting and DDoS mitigation — is deferred to the edge/platform layer (Cloudflare, Railway, Fly). An in-app per-IP limiter is deliberately not implemented: Apps Script traffic shares Google's IP ranges, the HMAC secret is shared (no per-user identity), and an in-process counter would not survive multiple workers or instances. |
 | Code execution | No `eval`, `exec`, or dynamic execution on any input path. |
 
 ---
@@ -136,8 +139,9 @@ Thresholds are calibrated against test cases including both attack patterns and 
 ### Prerequisites
 
 - Python 3.11+
-- A Google Workspace account
-- (Optional) Google Safe Browsing API key
+- A Google Workspace account (for installing the add-on)
+- An HTTPS-reachable backend URL — Apps Script cannot call `http://localhost`. For local development, expose the backend via [ngrok](https://ngrok.com/) or [cloudflared](https://github.com/cloudflare/cloudflared); for a stable demo, deploy to a host of your choice (Railway, Fly, Render, etc.)
+- *(optional)* [`clasp`](https://github.com/google/clasp) for pushing the add-on from the CLI instead of copy-paste — see `CLAUDE.md` for the workflow
 
 ### Backend
 
@@ -149,21 +153,37 @@ pip install -r requirements.txt
 
 # Configure — set at minimum the HMAC shared secret
 cp .env.example .env
-# Edit .env: set HMAC_SECRET to the same value as the Apps Script property
+# Edit .env: set HMAC_SECRET to a strong random value (the .env.example comment
+# shows how to generate one). Use the same value as the Apps Script property.
+# Optional knobs documented in .env.example: LOG_LEVEL, MAX_REQUEST_BYTES.
 
 # Run
 uvicorn app.main:app --reload --port 8000
 ```
 
+Smoke-test the backend in another shell:
+
+```bash
+curl http://localhost:8000/healthz
+# → {"status":"ok"}
+```
+
+The full `/analyze` endpoint requires an HMAC-signed request (see "API Contract" below) — the Gmail Add-on does this for you.
+
 ### Gmail Add-on
 
+> Apps Script can only call **HTTPS** URLs. For local backend development, expose `http://localhost:8000` via `ngrok http 8000` (or `cloudflared tunnel --url http://localhost:8000`) and use the resulting `https://...` URL as `BACKEND_URL`. For a stable demo, deploy the backend somewhere with HTTPS termination.
+
 1. Create a new project at [Google Apps Script](https://script.google.com)
-2. Copy all `.gs` files from `addon/` (`Code.gs`, `EmailExtractor.gs`, `BackendClient.gs`, `CardBuilder.gs`) into the project
+2. Add the add-on source — either:
+   - **Copy-paste:** copy `Code.gs`, `EmailExtractor.gs`, `BackendClient.gs`, `CardBuilder.gs` from `addon/` into the project
+   - **Or via `clasp`:** run `clasp create` in your own clone, then `clasp push` from `addon/`. Note: `addon/.clasp.json` is committed and points to *this* repo's script ID — replace it with your own after `clasp create`
 3. Replace `appsscript.json` with the project manifest from `addon/appsscript.json`
-4. Set script properties (Project Settings):
-   - `BACKEND_URL` — backend's public URL
-   - `HMAC_SECRET` — shared HMAC secret (same value as backend env var)
-5. Deploy as a test add-on and authorize for your Gmail account
+4. Set script properties (Project Settings → Script Properties):
+   - `BACKEND_URL` — backend's HTTPS URL, no trailing slash. Examples: `https://abcd1234.ngrok.io`, `https://my-app.up.railway.app`
+   - `HMAC_SECRET` — shared HMAC secret. **Must match** the `HMAC_SECRET` value in `backend/.env`
+5. Deploy as a test add-on (Apps Script editor → Deploy → Test deployments → Install) and authorize for your Gmail account
+6. Open any email — the add-on card appears in the right-hand panel
 
 ### Tests
 
@@ -172,6 +192,8 @@ cd backend
 source .venv/bin/activate
 python -m pytest tests/ -v
 ```
+
+Tests do not require a configured `.env` — `tests/conftest.py` seeds a stand-in `HMAC_SECRET` before any module imports `app.config`. Only `uvicorn` requires the real value.
 
 ---
 
@@ -207,7 +229,7 @@ python -m pytest tests/ -v
 {
   "verdict": "malicious",
   "score": 100.0,
-  "explanation": "Verdict: malicious.\n• sender_identity: Sender domain 'paypa1-support.com' resembles brand 'paypal' (critical, +35.0 pts)\n• authentication: DMARC policy returned 'fail' for sender domain (critical, +30.5 pts)\n• url_structure: URL contains IP address: http://192.168.1.100/verify-account (high, +19.8 pts)\nEvidence spans 3 categories. 2 area(s) could not be inspected.",
+  "explanation": "Verdict: malicious.\n• sender_identity: Sender domain 'paypa1-support.com' resembles brand 'paypal' (critical, +35.0 pts)\n• authentication: DMARC policy returned 'fail' for sender domain (critical, +30.5 pts)\n• url_structure: URL contains IP address: http://192.168.1.100/verify-account (high, +19.8 pts)\nEvidence spans 4 categories. 2 area(s) could not be inspected.",
   "signals": [
     {
       "id": "dmarc_fail",
@@ -301,3 +323,4 @@ python -m pytest tests/ -v
 - **Thread awareness** — conversation context for detecting hijacking and BEC patterns
 - **Feedback loop** — user reporting of false positives/negatives for threshold tuning
 - **Caching** — memoize results by message ID for repeated opens
+- **Edge rate limiting** — per-IP / per-account throttling at the platform layer (Cloudflare, Railway, Fly). In-app rate limiting was deliberately deferred — see the Security section for why per-IP counters don't fit this architecture.

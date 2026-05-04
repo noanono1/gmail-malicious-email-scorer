@@ -145,6 +145,7 @@ Documented for interview discussion ("what would you add next?").
 | "Report as phishing" UI action | Corpus building, Gmail spam report | Medium | Forward analysis to Gmail's spam reporting |
 | Production rate limiting | Replace in-process demo counter | Medium | Distributed rate limiting for real deployment |
 | Auto-updating threat lists | Keep brand/TLD/freemail lists current | Medium | Currently static lists |
+| Stronger `/analyze` auth (session-bound, not just shared HMAC secret) | Anyone with the secret can call the endpoint today | Medium | Options: short-lived tokens issued per add-on session, HMAC tied to a per-user nonce from the Apps Script event object, or OAuth2 service-account auth instead of symmetric HMAC. Acceptable for demo (the secret is never exposed to a browser), not for production |
 
 ---
 

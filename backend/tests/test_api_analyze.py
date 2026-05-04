@@ -288,3 +288,129 @@ class TestHealthEndpoint:
         response = client.get("/healthz")
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
+
+
+# ---------------------------------------------------------------------------
+# Step 3 hardening: docs visibility, request body cap, attachment size bound
+# ---------------------------------------------------------------------------
+
+
+class TestApiDocsHidden:
+    """The API schema endpoints are unconditionally disabled."""
+
+    def test_schema_endpoints_return_404(self, client: TestClient):
+        assert client.get("/docs").status_code == 404
+        assert client.get("/redoc").status_code == 404
+        assert client.get("/openapi.json").status_code == 404
+
+
+class TestRequestSizeLimit:
+    """The request-size middleware fires before HMAC reads the body."""
+
+    def test_oversized_body_rejected_with_413(self, client: TestClient, secret: str):
+        # 2 MiB body — over the default 1 MiB cap. We don't even need a valid
+        # signature; the middleware short-circuits before auth runs.
+        oversized_body = b"x" * (2 * 1024 * 1024)
+        timestamp = str(int(time.time()))
+        signature = _sign(secret, timestamp, oversized_body)
+
+        response = client.post(
+            "/analyze",
+            content=oversized_body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Timestamp": timestamp,
+                "X-Signature": signature,
+            },
+        )
+        assert response.status_code == 413
+        assert response.json()["detail"] == "Request body too large"
+
+    # Note: the malformed-Content-Length branch (400 "Invalid Content-Length")
+    # is a defensive cushion against a non-conformant HTTP client. Compliant
+    # clients — including httpx, the Apps Script UrlFetchApp, and any standard
+    # HTTP library — always send a numeric Content-Length, so the branch is
+    # effectively unreachable in production. We deliberately do not test it
+    # via the TestClient because httpx normalises Content-Length from the
+    # actual body length and a manually-set non-numeric header would not
+    # survive the wire — any test asserting the 400 response would be testing
+    # httpx internals, not our middleware.
+
+    def test_get_requests_unaffected_by_size_middleware(self, client: TestClient):
+        # GET has no body and no Content-Length is required.
+        response = client.get("/healthz")
+        assert response.status_code == 200
+
+    def test_custom_limit_honoured_via_factory_arg(self, secret: str):
+        # The factory takes its cap explicitly. Lower it to 100 bytes and
+        # verify even a tiny signed payload trips the middleware before HMAC
+        # would have run.
+        from app.main import create_app
+
+        body = json.dumps(_minimal_payload()).encode("utf-8")
+        assert len(body) > 100  # sanity — minimal payload is well over 100 bytes
+        timestamp = str(int(time.time()))
+        signature = _sign(secret, timestamp, body)
+
+        with TestClient(create_app(max_request_bytes=100)) as client:
+            response = client.post(
+                "/analyze",
+                content=body,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Timestamp": timestamp,
+                    "X-Signature": signature,
+                },
+            )
+            assert response.status_code == 413
+            assert response.json()["detail"] == "Request body too large"
+
+
+class TestAttachmentSizeBound:
+    """Pydantic enforces a 25 MiB sanity bound on reported attachment size."""
+
+    _MAX_BOUND = 26_214_400
+
+    def _payload_with_attachment(self, size_bytes: int) -> dict:
+        return {
+            **_minimal_payload(),
+            "attachments": [
+                {
+                    "filename": "blob.bin",
+                    "mime_type": "application/octet-stream",
+                    "size_bytes": size_bytes,
+                }
+            ],
+        }
+
+    def test_attachment_at_bound_accepted(self, client: TestClient, secret: str):
+        response = _post_signed(
+            client,
+            secret,
+            payload=self._payload_with_attachment(self._MAX_BOUND),
+        )
+        assert response.status_code == 200
+
+    def test_attachment_just_over_bound_rejected(self, client: TestClient, secret: str):
+        response = _post_signed(
+            client,
+            secret,
+            payload=self._payload_with_attachment(self._MAX_BOUND + 1),
+        )
+        assert response.status_code == 422
+
+    def test_grossly_oversized_attachment_rejected(self, client: TestClient, secret: str):
+        response = _post_signed(
+            client,
+            secret,
+            payload=self._payload_with_attachment(100_000_000_000),  # 100 GB
+        )
+        assert response.status_code == 422
+
+    def test_negative_attachment_size_rejected(self, client: TestClient, secret: str):
+        response = _post_signed(
+            client,
+            secret,
+            payload=self._payload_with_attachment(-1),
+        )
+        assert response.status_code == 422
