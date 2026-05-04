@@ -29,6 +29,7 @@ class BlindSpotArea(str, Enum):
     EMBEDDED_IMAGE = "embedded_image"
     URL_DESTINATION = "url_destination"
     AUTHENTICATION_HEADERS = "authentication_headers"
+    SENDER_IDENTITY = "sender_identity"
     INTEL_SOURCE_UNAVAILABLE = "intel_source_unavailable"
     QR_CODE = "qr_code"
     HTML_RENDERING = "html_rendering"

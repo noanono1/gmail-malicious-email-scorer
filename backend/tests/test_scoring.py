@@ -37,25 +37,19 @@ def _signal(
 
 
 class TestSingleSignalScoring:
-    def test_critical_full_confidence(self):
-        report = score_signals([_signal(SignalSeverity.CRITICAL)])
-        assert report.final_score == pytest.approx(SEVERITY_POINTS[SignalSeverity.CRITICAL])
-
-    def test_high_full_confidence(self):
-        report = score_signals([_signal(SignalSeverity.HIGH)])
-        assert report.final_score == pytest.approx(SEVERITY_POINTS[SignalSeverity.HIGH])
-
-    def test_medium_full_confidence(self):
-        report = score_signals([_signal(SignalSeverity.MEDIUM)])
-        assert report.final_score == pytest.approx(SEVERITY_POINTS[SignalSeverity.MEDIUM])
-
-    def test_low_full_confidence(self):
-        report = score_signals([_signal(SignalSeverity.LOW)])
-        assert report.final_score == pytest.approx(SEVERITY_POINTS[SignalSeverity.LOW])
-
-    def test_info_contributes_zero(self):
-        report = score_signals([_signal(SignalSeverity.INFO)])
-        assert report.final_score == 0.0
+    @pytest.mark.parametrize(
+        "severity",
+        [
+            SignalSeverity.CRITICAL,
+            SignalSeverity.HIGH,
+            SignalSeverity.MEDIUM,
+            SignalSeverity.LOW,
+            SignalSeverity.INFO,
+        ],
+    )
+    def test_full_confidence_matches_severity_points(self, severity):
+        report = score_signals([_signal(severity)])
+        assert report.final_score == pytest.approx(SEVERITY_POINTS[severity])
 
     def test_confidence_scales_contribution(self):
         report = score_signals([_signal(SignalSeverity.HIGH, confidence=0.5)])
@@ -223,29 +217,31 @@ class TestCrossCategoryBoost:
 
 
 class TestVerdictClassification:
-    def test_zero_is_safe(self):
-        assert classify_verdict(0.0) == Verdict.SAFE
-
-    def test_just_below_suspicious(self):
-        assert classify_verdict(14.9) == Verdict.SAFE
-
-    def test_exactly_suspicious(self):
-        assert classify_verdict(15.0) == Verdict.SUSPICIOUS
-
-    def test_just_below_likely_malicious(self):
-        assert classify_verdict(34.9) == Verdict.SUSPICIOUS
-
-    def test_exactly_likely_malicious(self):
-        assert classify_verdict(35.0) == Verdict.LIKELY_MALICIOUS
-
-    def test_just_below_malicious(self):
-        assert classify_verdict(64.9) == Verdict.LIKELY_MALICIOUS
-
-    def test_exactly_malicious(self):
-        assert classify_verdict(65.0) == Verdict.MALICIOUS
-
-    def test_max_score(self):
-        assert classify_verdict(100.0) == Verdict.MALICIOUS
+    @pytest.mark.parametrize(
+        ("score", "expected"),
+        [
+            (0.0, Verdict.SAFE),
+            (14.9, Verdict.SAFE),
+            (15.0, Verdict.SUSPICIOUS),
+            (34.9, Verdict.SUSPICIOUS),
+            (35.0, Verdict.LIKELY_MALICIOUS),
+            (64.9, Verdict.LIKELY_MALICIOUS),
+            (65.0, Verdict.MALICIOUS),
+            (100.0, Verdict.MALICIOUS),
+        ],
+        ids=[
+            "zero_is_safe",
+            "just_below_suspicious",
+            "exactly_suspicious",
+            "just_below_likely_malicious",
+            "exactly_likely_malicious",
+            "just_below_malicious",
+            "exactly_malicious",
+            "max_score",
+        ],
+    )
+    def test_classify(self, score, expected):
+        assert classify_verdict(score) == expected
 
 
 # ---------------------------------------------------------------------------

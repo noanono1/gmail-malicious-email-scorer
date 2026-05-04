@@ -80,6 +80,15 @@ URL_DESTINATION = BlindSpot(
     risk_note="A clean-looking domain could redirect to a phishing page",
 )
 
+SENDER_ADDRESS_UNPARSEABLE = BlindSpot(
+    area=BlindSpotArea.SENDER_IDENTITY,
+    reason="From address could not be parsed",
+    risk_note=(
+        "Sender identity checks (cousin domain, display-name impersonation, "
+        "reply-to and return-path mismatch) were skipped"
+    ),
+)
+
 
 # ── Intel-source (dynamic) ──────────────────────────────────────────
 
