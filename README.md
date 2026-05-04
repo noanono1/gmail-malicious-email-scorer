@@ -65,7 +65,7 @@ The detection engine (`detection_engine/`) is a pure Python library with zero we
 | Analyzer | Category | Signals |
 |---|---|---|
 | **Authentication** | Authentication | SPF/DKIM/DMARC failures, plus blind-spot reporting for `none`/`temperror` results |
-| **Sender** | Sender identity | Cousin/typosquat domains, display-name impersonation, freemail with organizational display name, Reply-To mismatch, Return-Path mismatch |
+| **Sender** | Sender identity | Cousin/typosquat domains, display-name impersonation, Reply-To mismatch, Return-Path mismatch |
 | **URL** | URL structure | Anchor/href mismatch, IP-literal hosts (IPv4 / IPv6) |
 | **Body content** | Body content | Urgency/pressure language, sensitive data requests, HTML forms with input fields |
 | **Attachment** | Attachment | Dangerous extensions (.exe, .scr, .js, .html), double extensions (.pdf.exe), macro-enabled Office files, password-protected archive hints |
