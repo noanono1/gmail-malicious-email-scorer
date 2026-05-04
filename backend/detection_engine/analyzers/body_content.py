@@ -105,57 +105,48 @@ class BodyContentAnalyzer(BaseAnalyzer):
     def analyze(self, email: EmailData) -> AnalysisOutput:
         html_text = _strip_html_tags(email.body_html) if email.body_html else ""
         text = f"{email.subject} {email.body_text} {html_text}".lower()
-        signals: list[Signal] = []
 
-        self._check_urgency(text, signals)
-        self._check_sensitive_data_request(text, signals)
-        self._check_html_form(email.body_html, signals)
+        candidates = (
+            self._urgency_signal(text),
+            self._sensitive_data_signal(text),
+            self._html_form_signal(email.body_html),
+        )
+        return AnalysisOutput(
+            signals=tuple(signal for signal in candidates if signal is not None),
+            blind_spots=(),
+        )
 
-        return AnalysisOutput(signals=tuple(signals), blind_spots=())
-
-    def _check_urgency(self, text: str, signals: list[Signal]) -> None:
+    def _urgency_signal(self, text: str) -> Signal | None:
         matched = [phrase for phrase in _URGENCY_PHRASES if phrase in text]
         if not matched:
-            return
-
-        signals.append(
-            Signal(
-                id="urgency_language",
-                category=SignalCategory.BODY_CONTENT,
-                severity=SignalSeverity.MEDIUM,
-                confidence=min(0.5 + 0.15 * len(matched), 1.0),
-                summary=f"Urgency/threat language detected: {', '.join(repr(p) for p in matched)}",
-            )
+            return None
+        return Signal(
+            id="urgency_language",
+            category=SignalCategory.BODY_CONTENT,
+            severity=SignalSeverity.MEDIUM,
+            confidence=min(0.5 + 0.15 * len(matched), 1.0),
+            summary=f"Urgency/threat language detected: {', '.join(repr(p) for p in matched)}",
         )
 
-    def _check_sensitive_data_request(
-        self, text: str, signals: list[Signal]
-    ) -> None:
+    def _sensitive_data_signal(self, text: str) -> Signal | None:
         matched = [phrase for phrase in _SENSITIVE_DATA_PHRASES if phrase in text]
         if not matched:
-            return
-
-        signals.append(
-            Signal(
-                id="sensitive_data_request",
-                category=SignalCategory.BODY_CONTENT,
-                severity=SignalSeverity.HIGH,
-                confidence=min(0.6 + 0.2 * len(matched), 1.0),
-                summary=f"Sensitive data request detected: {', '.join(repr(p) for p in matched)}",
-            )
+            return None
+        return Signal(
+            id="sensitive_data_request",
+            category=SignalCategory.BODY_CONTENT,
+            severity=SignalSeverity.HIGH,
+            confidence=min(0.6 + 0.2 * len(matched), 1.0),
+            summary=f"Sensitive data request detected: {', '.join(repr(p) for p in matched)}",
         )
 
-    def _check_html_form(self, html: str, signals: list[Signal]) -> None:
-        if not html:
-            return
-
-        if _FORM_PATTERN.search(html):
-            signals.append(
-                Signal(
-                    id="html_form_in_body",
-                    category=SignalCategory.BODY_CONTENT,
-                    severity=SignalSeverity.CRITICAL,
-                    confidence=1.0,
-                    summary="HTML <form> with input fields found in email body",
-                )
-            )
+    def _html_form_signal(self, html: str) -> Signal | None:
+        if not html or not _FORM_PATTERN.search(html):
+            return None
+        return Signal(
+            id="html_form_in_body",
+            category=SignalCategory.BODY_CONTENT,
+            severity=SignalSeverity.CRITICAL,
+            confidence=1.0,
+            summary="HTML <form> with input fields found in email body",
+        )

@@ -58,38 +58,35 @@ class AttachmentAnalyzer(BaseAnalyzer):
         if not email.attachments:
             return AnalysisOutput.empty()
 
-        signals: list[Signal] = []
+        candidates = (
+            self._dangerous_extension_signal(email),
+            self._double_extension_signal(email),
+            self._macro_enabled_signal(email),
+            self._password_protected_archive_signal(email),
+        )
+        return AnalysisOutput(
+            signals=tuple(signal for signal in candidates if signal is not None),
+            blind_spots=(ATTACHMENT_CONTENT,),
+        )
 
-        self._check_dangerous_extensions(email, signals)
-        self._check_double_extensions(email, signals)
-        self._check_macro_enabled(email, signals)
-        self._check_password_protected_archive(email, signals)
-
-        return AnalysisOutput(signals=tuple(signals), blind_spots=(ATTACHMENT_CONTENT,))
-
-    def _check_dangerous_extensions(
-        self, email: EmailData, signals: list[Signal]
-    ) -> None:
+    def _dangerous_extension_signal(self, email: EmailData) -> Signal | None:
         dangerous_files: list[str] = []
         for attachment in email.attachments:
             extensions = _get_extensions(attachment.filename)
             if extensions and extensions[-1] in _DANGEROUS_EXTENSIONS:
                 dangerous_files.append(attachment.filename)
 
-        if dangerous_files:
-            signals.append(
-                Signal(
-                    id="dangerous_file_extension",
-                    category=SignalCategory.ATTACHMENT,
-                    severity=SignalSeverity.CRITICAL,
-                    confidence=0.95,
-                    summary=f"Dangerous file type: {', '.join(dangerous_files[:3])}",
-                )
-            )
+        if not dangerous_files:
+            return None
+        return Signal(
+            id="dangerous_file_extension",
+            category=SignalCategory.ATTACHMENT,
+            severity=SignalSeverity.CRITICAL,
+            confidence=0.95,
+            summary=f"Dangerous file type: {', '.join(dangerous_files[:3])}",
+        )
 
-    def _check_double_extensions(
-        self, email: EmailData, signals: list[Signal]
-    ) -> None:
+    def _double_extension_signal(self, email: EmailData) -> Signal | None:
         double_ext_files: list[str] = []
         for attachment in email.attachments:
             extensions = _get_extensions(attachment.filename)
@@ -98,57 +95,54 @@ class AttachmentAnalyzer(BaseAnalyzer):
                 if safe_looking not in _DANGEROUS_EXTENSIONS:
                     double_ext_files.append(attachment.filename)
 
-        if double_ext_files:
-            signals.append(
-                Signal(
-                    id="double_file_extension",
-                    category=SignalCategory.ATTACHMENT,
-                    severity=SignalSeverity.CRITICAL,
-                    confidence=1.0,
-                    summary=f"Double extension masquerading: {', '.join(double_ext_files[:3])}",
-                )
-            )
+        if not double_ext_files:
+            return None
+        return Signal(
+            id="double_file_extension",
+            category=SignalCategory.ATTACHMENT,
+            severity=SignalSeverity.CRITICAL,
+            confidence=1.0,
+            summary=f"Double extension masquerading: {', '.join(double_ext_files[:3])}",
+        )
 
-    def _check_macro_enabled(
-        self, email: EmailData, signals: list[Signal]
-    ) -> None:
+    def _macro_enabled_signal(self, email: EmailData) -> Signal | None:
         macro_files: list[str] = []
         for attachment in email.attachments:
             extensions = _get_extensions(attachment.filename)
             if extensions and extensions[-1] in _MACRO_EXTENSIONS:
                 macro_files.append(attachment.filename)
 
-        if macro_files:
-            signals.append(
-                Signal(
-                    id="macro_enabled_document",
-                    category=SignalCategory.ATTACHMENT,
-                    severity=SignalSeverity.HIGH,
-                    confidence=0.85,
-                    summary=f"Macro-enabled document: {', '.join(macro_files[:3])}",
-                )
-            )
+        if not macro_files:
+            return None
+        return Signal(
+            id="macro_enabled_document",
+            category=SignalCategory.ATTACHMENT,
+            severity=SignalSeverity.HIGH,
+            confidence=0.85,
+            summary=f"Macro-enabled document: {', '.join(macro_files[:3])}",
+        )
 
-    def _check_password_protected_archive(
-        self, email: EmailData, signals: list[Signal]
-    ) -> None:
+    def _password_protected_archive_signal(self, email: EmailData) -> Signal | None:
+        # Cheap archive check first; password-text scan only runs if there is
+        # something to be password-protecting.
         has_archive = any(
             a.mime_type in _ARCHIVE_MIME_TYPES for a in email.attachments
         )
         if not has_archive:
-            return
+            return None
 
         body = f"{email.subject} {email.body_text}".lower()
-        if _PASSWORD_HINT_PATTERN.search(body) or "password" in body:
-            archive_names = [
-                a.filename for a in email.attachments if a.mime_type in _ARCHIVE_MIME_TYPES
-            ]
-            signals.append(
-                Signal(
-                    id="password_protected_archive",
-                    category=SignalCategory.ATTACHMENT,
-                    severity=SignalSeverity.HIGH,
-                    confidence=0.8,
-                    summary=f"Archive with password hint in body: {', '.join(archive_names[:3])}",
-                )
-            )
+        if not (_PASSWORD_HINT_PATTERN.search(body) or "password" in body):
+            return None
+
+        archive_names = [
+            a.filename for a in email.attachments
+            if a.mime_type in _ARCHIVE_MIME_TYPES
+        ]
+        return Signal(
+            id="password_protected_archive",
+            category=SignalCategory.ATTACHMENT,
+            severity=SignalSeverity.HIGH,
+            confidence=0.8,
+            summary=f"Archive with password hint in body: {', '.join(archive_names[:3])}",
+        )

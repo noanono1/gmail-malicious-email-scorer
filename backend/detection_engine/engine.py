@@ -6,7 +6,7 @@ from logging import getLogger
 from detection_engine.analyzers.base import BaseAnalyzer
 from detection_engine.domain import blind_spot_catalog
 from detection_engine.domain.email import EmailData
-from detection_engine.domain.enums import IntelSourceType, Verdict
+from detection_engine.domain.enums import IntelSourceType, SignalCategory, Verdict
 from detection_engine.domain.exceptions import AnalyzerCrashed
 from detection_engine.domain.signals import AnalysisOutput, BlindSpot, ScoredSignal, Signal
 from detection_engine.domain.verdict import AnalysisResult, AnalysisScope
@@ -63,7 +63,9 @@ class DetectionEngine:
             has_auth_headers="authentication-results" in email.headers,
         )
 
-        explanation = self._explain(verdict, top_signals, blind_spots)
+        explanation = _explain(
+            verdict, top_signals, report.active_categories, blind_spots,
+        )
 
         return AnalysisResult(
             verdict=verdict,
@@ -118,46 +120,53 @@ class DetectionEngine:
             sources_executed=tuple(executed_source_types),
         )
 
-    def _explain(
-        self,
-        verdict: Verdict,
-        top_signals: tuple[ScoredSignal, ...],
-        blind_spots: tuple[BlindSpot, ...],
-    ) -> str:
-        if not top_signals:
-            if blind_spots:
-                return (
-                    f"Verdict: {verdict.value}. \n No threat signals detected, "
-                    f"but {len(blind_spots)} area(s) could not be inspected."
-                )
-            return f"Verdict: {verdict.value}. \n No threat signals detected."
-
-        header = f"Verdict: {verdict.value}."
-
-        findings = "\n".join(
-            f"• {scored.signal.category.value}: {scored.signal.summary} "
-            f"({scored.signal.severity.value}, +{scored.contribution:.1f} pts)"
-            for scored in top_signals
-        )
-
-        categories = {scored.signal.category.value for scored in top_signals}
-        category_note = (
-            f"Evidence spans {len(categories)} categor{'y' if len(categories) == 1 else 'ies'}."
-            if categories
-            else ""
-        )
-
-        blind_note = (
-            f" {len(blind_spots)} area(s) could not be inspected."
-            if blind_spots
-            else ""
-        )
-
-        return f"{header}\n{findings}\n{category_note}{blind_note}"
-
 
 def _pick_top_signals(
     scored_signals: tuple[ScoredSignal, ...], count: int
 ) -> tuple[ScoredSignal, ...]:
     by_contribution = sorted(scored_signals, key=lambda scored: scored.contribution, reverse=True)
     return tuple(by_contribution[:count])
+
+
+def _explain(
+    verdict: Verdict,
+    top_signals: tuple[ScoredSignal, ...],
+    active_categories: frozenset[SignalCategory],
+    blind_spots: tuple[BlindSpot, ...],
+) -> str:
+    """Render a human-readable explanation of an analysis result.
+
+    `active_categories` comes from scoring and reflects every category that
+    contributed > 0 points — the same source of truth used for the
+    cross-category boost. Deriving it from `top_signals` instead would
+    undercount whenever signals exist outside the top 3 by contribution."""
+    if not top_signals:
+        if blind_spots:
+            return (
+                f"Verdict: {verdict.value}. \n No threat signals detected, "
+                f"but {len(blind_spots)} area(s) could not be inspected."
+            )
+        return f"Verdict: {verdict.value}. \n No threat signals detected."
+
+    header = f"Verdict: {verdict.value}."
+
+    findings = "\n".join(
+        f"• {scored.signal.category.value}: {scored.signal.summary} "
+        f"({scored.signal.severity.value}, +{scored.contribution:.1f} pts)"
+        for scored in top_signals
+    )
+
+    category_count = len(active_categories)
+    category_note = (
+        f"Evidence spans {category_count} categor{'y' if category_count == 1 else 'ies'}."
+        if category_count
+        else ""
+    )
+
+    blind_note = (
+        f" {len(blind_spots)} area(s) could not be inspected."
+        if blind_spots
+        else ""
+    )
+
+    return f"{header}\n{findings}\n{category_note}{blind_note}"
