@@ -19,10 +19,6 @@ from detection_engine.utils.typosquat import (
     normalize_typosquat,
 )
 
-# ---------------------------------------------------------------------------
-# Sender-detection catalogs
-# ---------------------------------------------------------------------------
-
 # Known brand → legitimate domains owned by that brand. Used to recognise
 # both legitimate brand mail (no signal) and impersonators (cousin/typosquat).
 # This is a small built-in brand catalog for deterministic demo detection.
@@ -112,11 +108,6 @@ _DISPLAY_NAME_TOKEN_SPLIT = re.compile(r"[\s\-_.,;:!?|/\\@()\[\]<>\"']+")
 _FREEMAIL_NAME_WORD_SPLIT = re.compile(r"[\s\-_]+")
 
 
-# ---------------------------------------------------------------------------
-# Sender-detection helpers
-# ---------------------------------------------------------------------------
-
-
 def _is_legitimate_brand_domain(domain: str, brand: str) -> bool:
     """True if *domain* is a legitimate domain owned by *brand*.
 
@@ -182,11 +173,6 @@ def _build_cousin_domain_signal(sender_domain: str, brand: str, distance: int) -
         confidence=confidence,
         summary=f"Sender domain '{sender_domain}' resembles brand '{brand}'",
     )
-
-
-# ---------------------------------------------------------------------------
-# Analyzer
-# ---------------------------------------------------------------------------
 
 
 class SenderAnalyzer(BaseAnalyzer):

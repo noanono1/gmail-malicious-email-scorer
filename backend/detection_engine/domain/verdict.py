@@ -31,7 +31,3 @@ class AnalysisResult:
     blind_spots: tuple[BlindSpot, ...]
     scope: AnalysisScope
     explanation: str
-
-    def __post_init__(self) -> None:
-        if not 0.0 <= self.score <= 100.0:
-            raise ValueError(f"score must be in [0,100], got {self.score}")

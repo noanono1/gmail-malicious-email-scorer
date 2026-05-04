@@ -151,8 +151,8 @@ class AnalyzeResponse(BaseModel):
                 for blind_spot in analysis_result.blind_spots
             ],
             scope=AnalysisScopeResponse(
-                analyzers_run=list(analysis_result.scope.analyzers_run),
-                intel_sources_run=list(analysis_result.scope.intel_sources_run),
+                analyzers_run=analysis_result.scope.analyzers_run,
+                intel_sources_run=analysis_result.scope.intel_sources_run,
                 has_html=analysis_result.scope.has_html,
                 has_attachments=analysis_result.scope.has_attachments,
                 has_auth_headers=analysis_result.scope.has_auth_headers,

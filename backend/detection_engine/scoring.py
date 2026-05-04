@@ -75,7 +75,7 @@ def score_signals(signals: Sequence[Signal]) -> ScoringReport:
         category for category, total in category_totals.items() if total > 0
     )
     multiplier = 1.0 + CROSS_CATEGORY_BOOST * max(0, len(active_categories) - 1)
-    final_score = _clamp(raw_total * multiplier, 0.0, 100.0)
+    final_score = max(0.0, min(raw_total * multiplier, 100.0))
 
     scored_signals = tuple(
         ScoredSignal(signal=signal, contribution=contributions[index])
@@ -139,7 +139,3 @@ def _category_totals(
 
 def _base_points(signal: Signal) -> float:
     return SEVERITY_POINTS[signal.severity] * signal.confidence
-
-
-def _clamp(value: float, minimum: float, maximum: float) -> float:
-    return max(minimum, min(value, maximum))

@@ -28,10 +28,6 @@ class Signal:
     summary: str
     confidence: float
 
-    def __post_init__(self) -> None:
-        if not 0.0 <= self.confidence <= 1.0:
-            raise ValueError(f"confidence must be in [0,1], got {self.confidence}")
-
 
 @dataclass(frozen=True)
 class ScoredSignal:
@@ -43,10 +39,6 @@ class ScoredSignal:
 
     signal: Signal
     contribution: float
-
-    def __post_init__(self) -> None:
-        if self.contribution < 0.0:
-            raise ValueError(f"contribution must be non-negative, got {self.contribution}")
 
 
 @dataclass(frozen=True)

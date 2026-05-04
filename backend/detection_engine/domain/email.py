@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Iterator, Optional
 
 _SHA256_HEX_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
@@ -76,4 +75,4 @@ class EmailData:
     reply_to_address: str = ""
     return_path_address: str = ""
     attachments: tuple[Attachment, ...] = ()
-    date: Optional[datetime] = None
+    date: datetime | None = None
