@@ -49,13 +49,34 @@ These indicators check whether the sending infrastructure is authorized by the c
 
 | ID | Indicator | What it detects | Severity | Signal strength | FP risk | Implementation notes |
 |---|---|---|---|---|---|---|
-| **AUTH-1** | SPF fail or none | Sending server not authorized by domain's DNS | HIGH | Strong | Low — legit misconfiguration is rare for established domains | Parse `Authentication-Results` header for `spf=fail` or `spf=none` |
-| **AUTH-2** | DKIM fail or none | Message signature invalid or absent | HIGH | Strong | Low | Parse `Authentication-Results` for `dkim=fail` or `dkim=none` |
-| **AUTH-3** | DMARC fail or none | Domain's own policy says this message is unauthorized | CRITICAL | Very strong | Very low — domain owner explicitly configured this | Parse `Authentication-Results` for `dmarc=fail` or `dmarc=none` |
+| **AUTH-1** | SPF failure (`fail` / `softfail` / `permerror`) | Sending server not authorized by domain's DNS, or SPF record is malformed | HIGH (`fail`), HIGH (`softfail` @ 0.7 conf), LOW (`permerror`) | Strong for `fail`, moderate for `softfail`, weak for `permerror` | Low for `fail`; moderate for `softfail` (forwarders); high for `permerror` (often misconfig) | Parse `Authentication-Results` header for `spf=<result>` |
+| **AUTH-2** | DKIM failure (`fail` / `permerror` / `policy`) | Message signature invalid, key record malformed, or signature doesn't meet local policy | HIGH (`fail`), LOW (`permerror`), MEDIUM (`policy`) | Strong for `fail`, weak for `permerror`/`policy` | Low for `fail`; moderate for others (mailing lists break DKIM, key rotation causes `permerror`) | Parse `Authentication-Results` for `dkim=<result>` |
+| **AUTH-3** | DMARC failure (`fail` / `permerror`) | Domain's own policy says this message is unauthorized, or DMARC record is malformed | CRITICAL (`fail`), LOW (`permerror`) | Very strong for `fail` | Very low for `fail` — domain owner explicitly configured this | Parse `Authentication-Results` for `dmarc=<result>` |
 
 **Why DMARC is CRITICAL while SPF/DKIM are HIGH**: DMARC is a policy decision by the domain owner — a DMARC fail means the sender's own domain is rejecting this message. SPF and DKIM are infrastructure checks that can fail for operational reasons (forwarding breaks SPF, mailing lists break DKIM). DMARC synthesizes both and adds owner intent.
 
 **Attenuation note**: SPF, DKIM, and DMARC failures are correlated — a spoofed email typically fails all three. The scoring algorithm's within-category attenuation (÷1.6 per additional signal) prevents triple-counting. Three auth failures contribute roughly the same as 1.9 individual failures, not 3.0.
+
+#### Result vocabulary (per RFC 7601)
+
+Every Authentication-Results value belongs to a fixed vocabulary. The analyzer maps each `(method, result)` pair to one or two outcomes — a signal, a blind spot, both, or neither.
+
+| Result | SPF | DKIM | DMARC | Outcome | Rationale |
+|---|---|---|---|---|---|
+| `pass` | ✓ | ✓ | ✓ | no-op | Verified — no signal needed |
+| `neutral` | ✓ | ✓ | — | no-op | Domain explicitly asserts nothing — no info |
+| `fail` | ✓ | ✓ | ✓ | signal | Active verification failure |
+| `softfail` | ✓ | — | — | signal (HIGH @ 0.7 conf) | SPF weak fail — domain says "probably not me" |
+| `permerror` | ✓ | ✓ | ✓ | signal (LOW @ 0.4 conf) | Misconfigured record — usually legit ops mistake, not malice |
+| `policy` | — | ✓ | — | signal (MEDIUM @ 0.6 conf) | Valid signature but doesn't meet local policy (e.g. weak key) |
+| `none` | ✓ | ✓ | ✓ | **blind spot + weak signal** | No policy/signature published. SPF/DKIM signal: LOW @ 0.5 conf. DMARC signal: MEDIUM @ 0.6 conf. |
+| `temperror` | ✓ | ✓ | ✓ | **blind spot only** | Transient DNS/lookup error — unrelated to message validity, must not contribute to the score |
+
+**Why `none` is both a blind spot AND a signal**: `none` carries two meanings. It is a *coverage gap* (we cannot enforce that authentication mechanism, so the user should know), and it is a *weak risk indicator* (a serious sender almost always publishes SPF/DKIM/DMARC; the absence is mildly suspicious). The blind spot communicates uncertainty in the UI; the low/medium signal contributes to the score only enough to amplify a verdict when stacked with other findings (cousin domain, urgency language, suspicious URLs). `none` alone — even on all three methods — is bounded well under the SUSPICIOUS threshold by within-category attenuation, so it cannot drive a false positive on its own.
+
+**Why `temperror` is blind-spot-only**: A transient DNS or lookup failure tells us nothing about the sender's posture. Treating it as a signal would penalize legitimate email for unrelated infrastructure noise.
+
+Unknown result strings (vendor-specific tokens, typos) are silently treated as no-ops rather than crashing the analyzer.
 
 ### SENDER_IDENTITY category
 
@@ -200,7 +221,7 @@ Every detection system has known gaps. Ours are documented as `BlindSpot` domain
 |---|---|---|---|
 | `ATTACHMENT_CONTENT` | Email has attachments | We check metadata (extension, MIME) but not file content — a .pdf could contain malicious JavaScript | Emitted by AttachmentAnalyzer |
 | `URL_DESTINATION` | Email has URLs | We check URL structure but don't follow links — a clean-looking domain could redirect to a phishing page | Emitted by UrlStructureAnalyzer |
-| `AUTHENTICATION_HEADERS` | Authentication-Results header absent | Email authentication status unknown — SPF, DKIM, and DMARC could not be evaluated | Emitted by AuthenticationAnalyzer |
+| `AUTHENTICATION_HEADERS` | Authentication-Results header absent, OR a method returned `none` (no policy published) / `temperror` (transient lookup failure) | We cannot evaluate that authentication mechanism — different from a `fail`, which means we *did* evaluate and it failed | Emitted by AuthenticationAnalyzer |
 | `THREAD_HISTORY` | Always | We analyze the single message, not the conversation thread — a reply to a legitimate thread is harder to identify as phishing | Emitted by engine |
 | `EMBEDDED_IMAGE` | Email has inline images or image attachments | Images could contain QR codes or text designed to bypass text-based analysis | Emitted by engine |
 | `QR_CODE` | Email has inline images or image attachments | QR codes in images can encode phishing URLs — undetectable without image processing | Emitted by engine |

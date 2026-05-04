@@ -94,20 +94,41 @@ class TestSoftfail:
 
 
 class TestNoneResults:
-    def test_dkim_none(self, analyzer: AuthenticationAnalyzer):
+    """`none` means no policy was published — both a coverage gap (blind spot)
+    AND a weak risk indicator (low/medium signal that stacks with other findings)."""
+
+    def test_dkim_none_emits_blind_spot_and_low_signal(self, analyzer: AuthenticationAnalyzer):
         email = _make_email("mx.example.com; spf=pass; dkim=none; dmarc=pass")
         output = analyzer.analyze(email)
         assert len(output.signals) == 1
-        assert output.signals[0].id == "dkim_none"
-        assert output.signals[0].confidence == 0.8
+        signal = output.signals[0]
+        assert signal.id == "dkim_none"
+        assert signal.severity == SignalSeverity.LOW
+        assert signal.confidence == 0.5
+        assert len(output.blind_spots) == 1
+        assert output.blind_spots[0].area == BlindSpotArea.AUTHENTICATION_HEADERS
+        assert "DKIM" in output.blind_spots[0].reason
 
-    def test_dmarc_none(self, analyzer: AuthenticationAnalyzer):
+    def test_dmarc_none_emits_blind_spot_and_medium_signal(self, analyzer: AuthenticationAnalyzer):
         email = _make_email("mx.example.com; spf=pass; dkim=pass; dmarc=none")
         output = analyzer.analyze(email)
         assert len(output.signals) == 1
-        assert output.signals[0].id == "dmarc_none"
-        assert output.signals[0].severity == SignalSeverity.CRITICAL
-        assert output.signals[0].confidence == 0.8
+        signal = output.signals[0]
+        assert signal.id == "dmarc_none"
+        assert signal.severity == SignalSeverity.MEDIUM
+        assert signal.confidence == 0.6
+        assert len(output.blind_spots) == 1
+        assert output.blind_spots[0].area == BlindSpotArea.AUTHENTICATION_HEADERS
+        assert "DMARC" in output.blind_spots[0].reason
+
+    def test_temperror_emits_blind_spot_only(self, analyzer: AuthenticationAnalyzer):
+        # temperror is transient DNS/lookup noise, not a domain-owner posture —
+        # it must never contribute to the score.
+        email = _make_email("mx.example.com; spf=pass; dkim=pass; dmarc=temperror")
+        output = analyzer.analyze(email)
+        assert len(output.signals) == 0
+        assert len(output.blind_spots) == 1
+        assert output.blind_spots[0].area == BlindSpotArea.AUTHENTICATION_HEADERS
 
 
 class TestMissingAuthHeader:
@@ -133,13 +154,6 @@ class TestPartialResults:
         output = analyzer.analyze(email)
         assert len(output.signals) == 1
         assert output.signals[0].id == "dmarc_fail"
-
-
-class TestScoreContributionIsZero:
-    def test_all_signals_have_zero_contribution(self, analyzer: AuthenticationAnalyzer):
-        email = _make_email("mx.example.com; spf=fail; dkim=fail; dmarc=fail")
-        output = analyzer.analyze(email)
-        assert all(s.score_contribution == 0.0 for s in output.signals)
 
 
 class TestRealFixtures:
