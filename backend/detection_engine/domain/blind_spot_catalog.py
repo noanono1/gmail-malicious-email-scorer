@@ -88,8 +88,8 @@ SENDER_ADDRESS_UNPARSEABLE = BlindSpot(
     area=BlindSpotArea.SENDER_IDENTITY,
     reason="From address could not be parsed",
     risk_note=(
-        "Sender identity checks (cousin domain, display-name impersonation, "
-        "reply-to and return-path mismatch) were skipped"
+        "Sender identity checks (cousin domain, reply-to and return-path "
+        "mismatch) were skipped"
     ),
 )
 

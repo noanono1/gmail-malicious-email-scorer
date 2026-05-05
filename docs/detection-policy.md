@@ -60,7 +60,7 @@ These indicators check whether the sending infrastructure is authorized by the c
 
 **Why DMARC is CRITICAL while SPF/DKIM are HIGH**: DMARC is a policy decision by the domain owner — a DMARC fail means the sender's own domain is rejecting this message. SPF and DKIM are infrastructure checks that can fail for operational reasons (forwarding breaks SPF, mailing lists break DKIM). DMARC synthesizes both and adds owner intent.
 
-**Attenuation note**: SPF, DKIM, and DMARC failures are correlated — a spoofed email typically fails all three. The scoring algorithm's within-category attenuation (÷1.6 per additional signal) prevents triple-counting. Three auth failures contribute roughly the same as 1.9 individual failures, not 3.0.
+**Attenuation note**: SPF, DKIM, and DMARC failures are correlated — a spoofed email typically fails all three. The scoring algorithm's within-category attenuation (÷1.4 per additional signal) prevents triple-counting. Three auth failures contribute roughly the same as 2.2 individual failures, not 3.0.
 
 #### Result vocabulary (per RFC 7601)
 
@@ -93,7 +93,7 @@ These indicators examine who is sending and whether the identity is deceptive, i
 | **SENDER-3** | From ≠ Reply-To mismatch | Response directed to a different address | HIGH | Strong | Moderate — legit mailing lists sometimes use different Reply-To | Flag when Reply-To domain differs from From domain. Suppressed when (a) both share the same registered organization (e.g. `support@mail.acme.com` ↔ `acme.com`), (b) the Reply-To is a known ESP, or (c) the From is a freemail provider — personal mail routinely sets a different reply address and flagging it would be too noisy |
 | **SENDER-4** | Return-Path ≠ From domain | Bounce address points to a different domain than the sender | MEDIUM | Moderate | Moderate — ESPs (SendGrid, SES) use their own Return-Path | Flag when Return-Path domain differs from From domain. Suppressed when both share the same registered organization or when Return-Path is a known ESP |
 
-**Why cousin domain is CRITICAL**: Unlike authentication failures (which could be misconfiguration), a cousin domain like `paypa1-support.com` is almost never accidental. It represents deliberate, premeditated impersonation — the attacker registered lookalike infrastructure. A single cousin domain detection should push the score into LIKELY_MALICIOUS territory on its own (CRITICAL = 35 base points, threshold = 35).
+**Why cousin domain is CRITICAL**: Unlike authentication failures (which could be misconfiguration), a cousin domain like `paypa1-support.com` is almost never accidental. It represents deliberate, premeditated impersonation — the attacker registered lookalike infrastructure. A single cousin domain detection pushes the score into LIKELY_MALICIOUS territory on its own (CRITICAL = 40 base points, threshold = 35).
 
 **Display-name impersonation is intentionally not a signal here**: An earlier draft included a brand-claim check on the From display name. It was removed because (a) it overlapped almost entirely with SENDER-1 — when the cousin domain fired, the display-name finding was suppressed to avoid double-counting, leaving its unique coverage limited to brand impersonation from freemail or unrelated domains; (b) coverage was bounded by a small static brand list that does not address the long tail of impersonated brands; (c) the more impactful display-name attack is personal-name impersonation in BEC (e.g. "John Smith, CEO" from a freemail account), which requires organizational context this static analyzer does not have. The attack surface is acknowledged as a deferred indicator rather than partially covered.
 
@@ -105,8 +105,11 @@ These indicators analyze links in the email body without following them.
 |---|---|---|---|---|---|---|
 | **URL-1** | href ≠ display text mismatch | Link text says "paypal.com" but href points elsewhere | CRITICAL | Very strong — deliberate deception | Very low — legit emails wont probably do this | Parse HTML `<a>` tags, extract href and inner text. If inner text looks like a URL (contains a dot and no spaces), compare its domain against the href domain |
 | **URL-2** | IP-literal host in URL | `http://192.168.1.100/verify`, `http://[::1]/verify` | HIGH | Strong — legitimate services use domain names | Low | Parse the URL host and validate it with `ipaddress.ip_address` (covers IPv4 and IPv6) |
+| **URL-3** | Dangerous URI scheme in href | `javascript:`, `data:`, `vbscript:`, `file:` URLs in `<a>` tags | CRITICAL | Very strong — mail clients block or strip these; surviving instances read as evasion | Very low — legitimate mail does not link these schemes | Parse the href scheme on every HTML link; flag anything in the dangerous-scheme set |
 
 **Why URL mismatch is CRITICAL**: This is the single strongest phishing indicator. When a link displays "www.paypal.com" but the href points to an IP address or unrelated domain, there is probably no innocent explanation. Combined with a cousin domain (SENDER-1), this produces convergent evidence across two categories, triggering the cross-category boost.
+
+**Why dangerous URI schemes are CRITICAL**: Each of `javascript:`, `vbscript:`, `data:`, and `file:` either embeds executable content (script schemes), embeds a whole payload page in the href itself (`data:`), or escapes to local resources (`file:`). Major mail clients block or strip them, so a surviving instance in an inbound message reads as deliberate evasion rather than a normal link.
 
 **What this category does not flag**: shortened URLs (bit.ly, tinyurl.com, t.co) and high link counts are intentionally excluded — see "Deferred Indicators" for the reasoning. The destination question they gesture at is already represented as the `URL_DESTINATION` blind spot.
 
@@ -181,7 +184,7 @@ These indicators were evaluated and intentionally excluded from the initial scop
 
 ## How Indicators Map to the Scoring Algorithm
 
-The scoring algorithm (defined in `scoring.py`) enforces the relationships described above:
+The scoring algorithm is defined in [`backend/detection_engine/scoring.py`](../backend/detection_engine/scoring.py); the constants below are the live values. This section explains the design rationale — for the source-of-truth values, read the constants in `scoring.py` directly.
 
 ### Severity → base points
 
@@ -190,15 +193,15 @@ The scoring algorithm (defined in `scoring.py`) enforces the relationships descr
 | INFO | 0 | Appears in report, never affects score |
 | LOW | 5 | Supporting signal — needs corroboration |
 | MEDIUM | 12 | Notable but not alarming alone |
-| HIGH | 22 | Serious finding — two from different categories cross SUSPICIOUS |
-| CRITICAL | 35 | One alone reaches LIKELY_MALICIOUS |
+| HIGH | 25 | Two from different categories cross SUSPICIOUS even at 0.9 confidence |
+| CRITICAL | 40 | One alone reaches LIKELY_MALICIOUS even at 0.9 confidence |
 
 ### Score accumulation safeguards
 
-- **Within-category attenuation (÷1.6^k)**: Prevents correlated signals from stacking. Three AUTH failures ≈ 1.9× one failure, not 3×.
+- **Within-category attenuation (÷1.4^k)**: Prevents correlated signals from stacking. Three AUTH failures ≈ 2.2× one failure, not 3×.
 - **Category cap (50 pts)**: No single category can dominate. Five auth failures cannot push past LIKELY_MALICIOUS without evidence from another category.
-- **Cross-category boost (+10% per extra active category)**: Two categories → ×1.10, three → ×1.20, four → ×1.30. Reflects that convergent evidence across orthogonal categories is more diagnostic than depth in one.
-- **Infrastructure-only dampener (×0.78)**: Applied when ≥2 active categories are firing, *all* of them are AUTHENTICATION or SENDER_IDENTITY ("infrastructure looks unsettled" signals), and *no* category contributes a CRITICAL-strength score (≥35). This is the false-positive guard: SPF softfail + Reply-To mismatch alone is two HIGH-severity signals across two categories that would otherwise sum to LIKELY_MALICIOUS, but without any URL/body/attachment evidence the email has no concrete attack indicator — only "something looks off about the infrastructure". The dampener pulls it back to SUSPICIOUS. Decisive single signals (DMARC fail at CRITICAL, cousin domain at CRITICAL) disable the dampener — they are strong enough on their own to justify a LIKELY_MALICIOUS verdict.
+- **Cross-category boost (+15% per extra active category)**: Two categories → ×1.15, three → ×1.30, four → ×1.45. Reflects that convergent evidence across orthogonal categories is more diagnostic than depth in one.
+- **Infrastructure-only dampener (×0.78)**: Applied when ≥2 active categories are firing, *all* of them are AUTHENTICATION or SENDER_IDENTITY ("infrastructure looks unsettled" signals), and *no* category contributes a CRITICAL-strength score (≥40). The false-positive guard for the "small-vendor email with auth/sender weirdness but no concrete attack content" pattern — without any URL/body/attachment evidence the email has no declared attack vector, just unsettled infrastructure. The dampener softens the verdict by ~22%, which fully demotes weaker pairs (e.g. SPF softfail + Return-Path mismatch from SUSPICIOUS to SAFE) and meaningfully reduces the strength of stronger pairs (e.g. SPF softfail + Reply-To mismatch stays in LIKELY_MALICIOUS but at the bottom of the band rather than mid-band — see worked example below). Decisive single signals (DMARC fail at CRITICAL, cousin domain at CRITICAL) disable the dampener — they are strong enough on their own to justify the verdict.
 
 ### Verdict thresholds
 
@@ -216,24 +219,27 @@ An email from `paypa1-support.com` with SPF/DKIM/DMARC fail, a deceptive URL, an
 
 ```
 AUTHENTICATION:
-  DMARC fail     → CRITICAL (35.0) ÷ 1.6^0 = 35.0
-  SPF fail       → HIGH    (22.0) ÷ 1.6^1 = 13.75
-  DKIM fail      → HIGH    (22.0) ÷ 1.6^2 =  8.59
-  Category total = 57.34 → capped at 50.0
+  DMARC fail     → CRITICAL (40.0) ÷ 1.4^0 = 40.00
+  SPF fail       → HIGH    (25.0) ÷ 1.4^1 = 17.86
+  DKIM fail      → HIGH    (25.0) ÷ 1.4^2 = 12.76
+  Category total = 70.62 → scaled to cap of 50.00
+    DMARC fail   → 40.00 × 50/70.62 = 28.32
+    SPF fail     → 17.86 × 50/70.62 = 12.64
+    DKIM fail    → 12.76 × 50/70.62 =  9.03
 
 SENDER_IDENTITY:
-  Cousin domain  → CRITICAL (35.0) ÷ 1.6^0 = 35.0
+  Cousin domain  → CRITICAL (40.0) ÷ 1.4^0 = 40.00
 
 URL_STRUCTURE:
-  Href ≠ display → CRITICAL (35.0) ÷ 1.6^0 = 35.0
+  Href ≠ display → CRITICAL (40.0) ÷ 1.4^0 = 40.00
 
 BODY_CONTENT (language assessment):
-  manipulative_language → HIGH (22.0 × 0.95 conf) = 20.9
+  manipulative_language → HIGH (25.0 × 0.95 conf) = 23.75
 
-Raw total = 50.0 + 35.0 + 35.0 + 20.9 = 140.9
-Active categories = 4 → cross-category boost ×1.30
-Dampener: not all categories are infrastructure → no dampener
-Final = 140.9 × 1.30 = 183.2 → clamped to 100.0
+Raw total = 50.00 + 40.00 + 40.00 + 23.75 = 153.75
+Active categories = 4 → cross-category boost ×1.45
+Dampener: BODY_CONTENT and URL_STRUCTURE are not infrastructure → no dampener
+Final = 153.75 × 1.45 = 222.94 → clamped to 100.0
 Verdict = MALICIOUS ✓
 ```
 
@@ -243,11 +249,11 @@ A body that asks for the user's password under severe pressure, but with valid a
 
 ```
 BODY_CONTENT (language assessment):
-  manipulative_language → HIGH (22.0 × 0.95 conf) = 20.9
+  manipulative_language → HIGH (25.0 × 0.95 conf) = 23.75
 
-Raw total = 20.9
+Raw total = 23.75
 1 active category → no cross-category boost
-Final = 20.9 → SUSPICIOUS
+Final = 23.75 → SUSPICIOUS
 ```
 
 A flagrantly worded body alone is bounded at SUSPICIOUS — by design. The HIGH severity ceiling on probabilistic language assessments applies, and a single category produces no cross-category boost. Pair the same language with another finding (deceptive URL, sender mismatch, auth fail) and the cross-category boost lifts the score into LIKELY_MALICIOUS / MALICIOUS without raising any individual signal's severity.
@@ -258,18 +264,20 @@ A small-vendor email with `spf=softfail` and a Reply-To pointing to a different 
 
 ```
 AUTHENTICATION:
-  SPF softfail   → HIGH (22.0 × 0.7 conf) = 15.4
+  SPF softfail      → HIGH (25.0 × 0.7 conf) = 17.50
 
 SENDER_IDENTITY:
-  Reply-To mismatch → HIGH (22.0 × 1.0 conf) = 22.0
+  Reply-To mismatch → HIGH (25.0 × 1.0 conf) = 25.00
 
-Raw total = 37.4
-2 active categories → cross-category boost ×1.10 → 41.14
+Raw total = 42.50
+2 active categories → cross-category boost ×1.15 → 48.88
 Both categories are infrastructure, no CRITICAL contribution → dampener ×0.78
-Final = 41.14 × 0.78 = 32.1 → SUSPICIOUS
+Final = 48.88 × 0.78 = 38.12 → LIKELY_MALICIOUS (low end of the 35–64 band)
 ```
 
-Without the dampener this would land in LIKELY_MALICIOUS — but the email has no URL, body, or attachment evidence declaring an attack. SUSPICIOUS ("review this") is the calibrated verdict.
+Without the dampener this case would sit at 48.88 — mid-band LIKELY_MALICIOUS. The dampener pulls it down to 38.12, just inside the same band: the verdict label does not change here, but the email reads as a much weaker LIKELY_MALICIOUS than its uncorrected score suggests.
+
+The dampener's calibrated demotion (~22%) crosses the LIKELY_MALICIOUS / SUSPICIOUS threshold for weaker pairs (e.g. SPF softfail + Return-Path mismatch, where Return-Path is MEDIUM rather than HIGH), and crosses the SUSPICIOUS / SAFE threshold for the very weakest infrastructure-only combinations. For the strongest infrastructure-only pair (SPF softfail + Reply-To mismatch shown above) it softens but does not flip the tier. Tightening the dampener further would risk demoting genuine spoofing cases that should read LIKELY_MALICIOUS — see the constant's docstring in `scoring.py` for the calibration tradeoff.
 
 ### Example: legitimate Amazon order
 
@@ -291,7 +299,7 @@ Every detection system has known gaps. Ours are modeled as `BlindSpot` domain ob
 | `ATTACHMENT_CONTENT` | Email has attachments | Only attachment metadata (name, size, type) was checked — file contents were not opened or scanned | Emitted by AttachmentAnalyzer |
 | `URL_DESTINATION` | Email has URLs | URLs were detected, but destination pages were not fetched or verified | Emitted by UrlStructureAnalyzer |
 | `AUTHENTICATION_HEADERS` | Authentication-Results header absent, OR a method returned `none` (no policy published) / `temperror` (transient lookup failure) | SPF, DKIM, and DMARC were not evaluated for this email — different from a `fail`, which means we *did* evaluate and it failed | Emitted by AuthenticationAnalyzer |
-| `SENDER_IDENTITY` | The From address could not be parsed (no `@`, empty domain, malformed) | All sender-identity checks (cousin domain, display-name impersonation, reply-to and return-path mismatch) were skipped. A verdict of SAFE on a malformed From should not be read as "the sender looks fine" | Emitted by SenderAnalyzer |
+| `SENDER_IDENTITY` | The From address could not be parsed (no `@`, empty domain, malformed) | All sender-identity checks (cousin domain, reply-to and return-path mismatch) were skipped. A verdict of SAFE on a malformed From should not be read as "the sender looks fine" | Emitted by SenderAnalyzer |
 | `THREAD_HISTORY` | Always | Only this email was analyzed — surrounding thread context was not considered | Emitted by engine |
 | `EMBEDDED_IMAGE` | Email has inline images or image attachments | Image contents were not extracted — any text or QR codes inside images were not read | Emitted by engine |
 | `QR_CODE` | (reserved) | QR codes inside images were not decoded — image processing is out of scope | Defined in the `BlindSpotArea` enum but not emitted yet — image-content inspection (OCR / QR decoding) is a future extension. The `EMBEDDED_IMAGE` blind spot above already covers the user-facing "we did not look inside images" message |

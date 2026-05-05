@@ -74,7 +74,7 @@ URL and attachment analysis. Full test suite. All 5 analyzers wired.
 |---|---|
 | **File** | `detection_engine/analyzers/url_structure.py` |
 | **Category** | URL_STRUCTURE |
-| **Signals** | URL-1 (href ≠ display text → CRITICAL), URL-2 (IP in URL → HIGH) |
+| **Signals** | URL-1 (href ≠ display text → CRITICAL), URL-2 (IP in URL → HIGH), URL-3 (dangerous URI scheme → CRITICAL) |
 | **Blind spot** | `URL_DESTINATION` whenever URLs are found in the email |
 | **Notes** | URL-1 only flags when display text looks like a URL (contains a dot, no spaces). Reports first 3 mismatches. Shortened-URL detection and link-volume heuristics are intentionally out of scope — see `docs/detection-policy.md` "Deferred Indicators". |
 

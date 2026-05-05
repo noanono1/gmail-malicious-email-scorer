@@ -70,7 +70,7 @@ The engine splits analyzers along a deliberate seam: **rules where the artifact 
 |---|---|---|
 | **Authentication** | Authentication | SPF/DKIM/DMARC failures, plus blind-spot reporting for `none`/`temperror` results |
 | **Sender** | Sender identity | Cousin/typosquat domains, Reply-To mismatch, Return-Path mismatch |
-| **URL** | URL structure | Anchor/href mismatch, IP-literal hosts (IPv4 / IPv6) |
+| **URL** | URL structure | Anchor/href mismatch, IP-literal hosts (IPv4 / IPv6), dangerous URI schemes (`javascript:`, `data:`, `vbscript:`, `file:`) |
 | **Body content** | Body content | HTML `<form>` with input fields in the email body (structural only — language-based body checks are owned by the Language Assessment analyzer below) |
 | **Attachment** | Attachment | Dangerous extensions (.exe, .scr, .js, .html), double extensions (.pdf.exe), macro-enabled Office files, password-protected archive hints |
 
@@ -103,27 +103,31 @@ This means the result is never just "score: 5, safe" — it includes "…but the
 
 ## Scoring
 
-The scoring engine converts signals into a final score and verdict.
+The scoring engine converts signals into a final score and verdict. Constants live in [`backend/detection_engine/scoring.py`](backend/detection_engine/scoring.py); this section explains *why* they're shaped the way they are. See `docs/detection-policy.md` for fully worked examples.
 
-**Signal scoring** — each signal has a base severity weight. Every point in the final score traces back to a specific finding with evidence.
+**Severity points** — each signal carries a base weight from its severity, scaled by the analyzer's confidence:
 
-**Category caps** — each category is capped at 50 points. An email with 8 suspicious URL patterns but nothing else wrong won't score as "malicious" — correlated signals from a single vector are bounded.
+| Severity | Base points | Intent |
+|---|---|---|
+| INFO | 0 | Appears in report, never affects score |
+| LOW | 5 | Supporting signal — needs corroboration |
+| MEDIUM | 12 | Notable but not alarming alone |
+| HIGH | 25 | Two HIGH signals from different categories cross SUSPICIOUS |
+| CRITICAL | 40 | One alone reaches LIKELY_MALICIOUS |
 
-**Within-category attenuation** — each additional signal within a category is attenuated by a factor of 1.6 (first signal: full value, second: ~63%, third: ~39%). Redundant signals produce diminishing returns.
+Every point in the final score traces back to a specific finding with verbatim evidence in its summary.
 
-**Goal-alignment boost** — instead of a flat per-category multiplier, the scorer counts how many distinct categories converge on the same `AttackGoal` (credential theft, payment fraud, malware delivery, personal-data harvest). Spoofing/impersonation enablers (auth fail, sender mismatch, IP-literal URL) leave the goal unset and act as amplifiers — they corroborate any goal-tagged finding without declaring one. The aligned-categories count is the union of goal-tagged and amplifier categories supporting the dominant goal:
+**Within-category attenuation** — each additional signal in the same category is divided by `1.4^k` (first signal: full value, second: ~71%, third: ~51%). Models diminishing returns on correlated evidence — three auth failures (SPF + DKIM + DMARC) on the same spoofed message contribute roughly 2.2× one failure, not 3×.
 
-| Aligned categories | Multiplier |
-|---|---|
-| 0 or 1 | ×1.00 |
-| 2 | ×1.20 |
-| ≥ 3 | ×1.40 |
+**Category cap** — each category is capped at 50 points. An email with eight suspicious URL patterns but nothing else wrong won't score as malicious — correlated signals from a single vector are bounded.
 
-This rewards convergence on intent over mere category count: scattered low-severity findings with no shared goal stay at ×1.00, while a credential-theft body, a deceptive URL, and a sender mismatch all telling the same story reach ×1.40.
+**Cross-category boost** — `+15%` per active category beyond the first. Two active categories → ×1.15, three → ×1.30, four → ×1.45. Convergent evidence across orthogonal categories (auth fail + cousin domain + deceptive URL) is more diagnostic than depth in one.
+
+**Infrastructure-only dampener** — when ≥2 active categories are firing, *all* of them are AUTHENTICATION or SENDER_IDENTITY ("infrastructure looks unsettled" signals), and *no* category contributes a CRITICAL-strength score (≥40), the run is multiplied by `×0.78`. This is the false-positive guard for the "SPF softfail + Reply-To mismatch on a small-vendor email" pattern: two HIGH signals across two categories that would otherwise reach LIKELY_MALICIOUS, but with no URL/body/attachment evidence declaring an actual attack. A decisive infrastructure finding (DMARC fail at CRITICAL, cousin domain at CRITICAL) disables the dampener — it's strong enough to justify the verdict on its own.
 
 **Inspection-gap floor** — when zero signals fired but a primary inspection channel was unavailable (today: the `language_assessment` blind spot), the verdict is floored from `safe` to `inconclusive` rather than certified safe on missing coverage. The numeric score stays 0 because there was nothing to score.
 
-### Verdict Thresholds
+### Verdict thresholds
 
 | Score | Verdict |
 |---|---|
@@ -254,21 +258,37 @@ Tests do not require a configured `.env` — `tests/conftest.py` seeds a stand-i
 }
 ```
 
-**Response** (deterministic engine output for this input — Language Assessment analyzer disabled):
+**Response** (deterministic engine output for this input — Language Assessment analyzer disabled). The numbers below are produced by running the request above through the engine; `score_contribution` is post-attenuation and post-cap, before the cross-category boost folds into the final score.
 
 ```json
 {
   "verdict": "malicious",
   "score": 100.0,
-  "explanation": "Verdict: malicious.\n• sender_identity: Sender domain 'paypa1-support.com' resembles brand 'paypal' (critical, +35.0 pts)\n• authentication: DMARC policy returned 'fail' for sender domain (critical, +30.5 pts)\n• url_structure: URL contains IP address: http://192.168.1.100/verify-account (high, +19.8 pts)\nEvidence spans 3 categories. 3 area(s) could not be inspected.",
+  "explanation": "Verdict: malicious.\n• sender_identity: Sender domain 'paypa1-support.com' resembles brand 'paypal' (critical, +40.0 pts)\n• authentication: DMARC policy returned 'fail' for sender domain (critical, +28.3 pts)\n• url_structure: URL contains IP address: http://192.168.1.100/verify-account (high, +22.5 pts)\nEvidence spans 3 categories. 3 area(s) could not be inspected.",
   "signals": [
+    {
+      "id": "spf_fail",
+      "category": "authentication",
+      "severity": "high",
+      "summary": "SPF check returned 'fail' for sender domain",
+      "confidence": 1.0,
+      "score_contribution": 12.64
+    },
+    {
+      "id": "dkim_fail",
+      "category": "authentication",
+      "severity": "high",
+      "summary": "DKIM verification returned 'fail' for sender domain",
+      "confidence": 1.0,
+      "score_contribution": 9.03
+    },
     {
       "id": "dmarc_fail",
       "category": "authentication",
       "severity": "critical",
       "summary": "DMARC policy returned 'fail' for sender domain",
       "confidence": 1.0,
-      "score_contribution": 30.5
+      "score_contribution": 28.32
     },
     {
       "id": "cousin_domain",
@@ -276,7 +296,15 @@ Tests do not require a configured `.env` — `tests/conftest.py` seeds a stand-i
       "severity": "critical",
       "summary": "Sender domain 'paypa1-support.com' resembles brand 'paypal'",
       "confidence": 1.0,
-      "score_contribution": 35.0
+      "score_contribution": 40.0
+    },
+    {
+      "id": "return_path_mismatch",
+      "category": "sender_identity",
+      "severity": "medium",
+      "summary": "Return-Path domain (cheap-mailer.xyz) differs from sender domain (paypa1-support.com)",
+      "confidence": 0.8,
+      "score_contribution": 6.86
     },
     {
       "id": "ip_address_in_url",
@@ -284,16 +312,21 @@ Tests do not require a configured `.env` — `tests/conftest.py` seeds a stand-i
       "severity": "high",
       "summary": "URL contains IP address: http://192.168.1.100/verify-account",
       "confidence": 0.9,
-      "score_contribution": 19.8
+      "score_contribution": 22.5
     }
   ],
-  "top_signals": [ "...same structure as signals, top 3 by score_contribution..." ],
+  "top_signals": [ "...same structure as signals, top 3 by score_contribution: cousin_domain, dmarc_fail, ip_address_in_url..." ],
   "active_categories": ["authentication", "sender_identity", "url_structure"],
   "blind_spots": [
     {
       "area": "thread_history",
       "reason": "Single-email analysis only",
       "risk_note": "Only this email was analyzed — surrounding thread context was not considered."
+    },
+    {
+      "area": "html_rendering",
+      "reason": "HTML body not rendered — text extracted from raw markup",
+      "risk_note": "The message was not rendered as a browser would display it, so CSS- or script-driven content was not evaluated."
     },
     {
       "area": "url_destination",

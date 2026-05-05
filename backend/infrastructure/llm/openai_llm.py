@@ -13,27 +13,15 @@ logger = logging.getLogger(__name__)
 class OpenAiLlm:
     """Body-content language classifier backed by the OpenAI Chat Completions API.
 
-    Drop-in alternative to :class:`infrastructure.llm.local_slm.LocalSlm`.
-    Same contract (``is_available`` + ``assess``), same prompt-injection
-    defenses (random per-request delimiter, Unicode hygiene, schema-strict
-    parsing, evidence grounding) — see ``_prompt.py``. Differences are
-    transport-only:
+    Drop-in alternative to :class:`infrastructure.llm.local_slm.LocalSlm` with
+    the same contract and the same shared defenses (see ``_prompt.py``).
+    Provider-specific choices — ``response_format=LanguageAssessment`` for
+    structured output, no ``temperature``, no retries — are documented at
+    each call site.
 
-    * ``response_format=LanguageAssessment`` uses the SDK's structured
-      output to parse the response into a Pydantic instance directly,
-      replacing the JSON-Schema ``format`` field used by Ollama.
-    * ``temperature`` is not sent — newer reasoning-class models
-      (gpt-5-*, o-series) reject non-default values, and the structured
-      output already constrains variability to the schema's enums.
-    * Any SDK exception (auth, rate limit, transport, validation) is
-      caught and mapped to ``None`` — the analyzer surfaces a blind spot.
-      We do not retry: a failed call is a legitimate degraded state, not
-      a soft error to paper over.
-
-    Security posture: enabling this provider sends attacker-controlled
-    email content to a third-party API. The default deployment keeps the
-    local Ollama provider precisely so this tradeoff is opt-in. See the
-    config comment for ``LANGUAGE_PROVIDER``.
+    Security posture: enabling this provider sends attacker-controlled email
+    content to a third-party API. The default deployment keeps the local
+    Ollama provider precisely so this tradeoff is opt-in.
     """
 
     def __init__(
@@ -45,11 +33,9 @@ class OpenAiLlm:
     ) -> None:
         self._model = model
         self._timeout_seconds = timeout_seconds
-        # ``timeout`` here applies per-request and is honored by the SDK's
-        # underlying httpx client. We do not pass ``max_retries`` (default 2)
-        # because retries would silently lengthen the user-visible wait that
-        # the timeout is meant to bound; a stalled or rate-limited request
-        # should fall back to the blind spot quickly.
+        # ``max_retries=0``: the SDK's default of 2 would silently extend the
+        # user-visible wait past ``timeout_seconds``. A stalled or rate-limited
+        # request should fall back to a blind spot quickly.
         self._client = OpenAI(
             api_key=api_key,
             timeout=timeout_seconds,
@@ -79,14 +65,10 @@ class OpenAiLlm:
     def _call_openai(
         self, system_prompt: str, user_message: str,
     ) -> LanguageAssessment | None:
-        # We do not send ``temperature``. Newer reasoning-class models
-        # (gpt-5-*, o-series) reject any non-default value with HTTP 400,
-        # and grammar-constrained decoding via ``response_format`` already
-        # eliminates the worst variability — values outside the schema
-        # are unreachable at decode time. Determinism on identical inputs
-        # is not absolute, but the structured-output guarantee plus the
-        # closed-set enums of ``LanguageAssessment`` keep the output band
-        # narrow enough for the engine's downstream rules.
+        # No ``temperature``: newer reasoning-class models (gpt-5-*, o-series)
+        # reject non-default values with HTTP 400, and grammar-constrained
+        # decoding via ``response_format`` already pins outputs to the schema's
+        # enums.
         try:
             response = self._client.beta.chat.completions.parse(
                 model=self._model,
