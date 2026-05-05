@@ -4,3 +4,5 @@ pydantic>=2.7,<3.0
 structlog>=24.1,<25.0
 python-dotenv>=1.0,<2.0
 tldextract>=5.1,<6.0
+requests>=2.32,<3.0
+openai>=1.40,<2.0

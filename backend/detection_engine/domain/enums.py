@@ -34,6 +34,7 @@ class BlindSpotArea(str, Enum):
     QR_CODE = "qr_code"
     HTML_RENDERING = "html_rendering"
     THREAD_HISTORY = "thread_history"
+    LANGUAGE_ASSESSMENT = "language_assessment"
 
 
 class IntelSourceType(str, Enum):

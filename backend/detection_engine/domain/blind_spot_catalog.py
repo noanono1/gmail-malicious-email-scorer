@@ -106,3 +106,13 @@ def intel_source_failed(source_type: IntelSourceType) -> BlindSpot:
         reason=f"{source_type.value} query failed",
         risk_note=f"Threat intelligence not consulted — {source_type.value} was not queried",
     )
+
+
+LANGUAGE_ASSESSMENT_UNAVAILABLE = BlindSpot(
+    area=BlindSpotArea.LANGUAGE_ASSESSMENT,
+    reason="Language assessment unavailable — local SLM unreachable or its response failed validation",
+    risk_note=(
+        "Social-engineering language (paraphrased urgency, credential solicitation, "
+        "authority impersonation, financial lure) could not be assessed for this email"
+    ),
+)
