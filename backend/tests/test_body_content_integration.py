@@ -1,4 +1,7 @@
-"""Integration tests — all Tier 1 analyzers (Authentication + Sender + BodyContent) through the engine."""
+"""Integration tests — Authentication + Sender + BodyContent through the engine.
+
+Body-content scope is structural HTML form only; linguistic detection
+moved to the LanguageAssessmentAnalyzer (covered separately)."""
 
 from __future__ import annotations
 
@@ -14,7 +17,6 @@ from tests.email_fixtures import (
     EMPTY_MINIMAL,
     LEGIT_AMAZON_ORDER,
     LEGIT_MARKETING,
-    MALWARE_ATTACHMENT,
     MASS_PHISHING,
     SPEAR_PHISH_COUSIN_DOMAIN,
     build_email_data,
@@ -24,12 +26,11 @@ from tests.email_fixtures import (
 def _engine() -> DetectionEngine:
     return DetectionEngine(
         analyzers=[AuthenticationAnalyzer(), SenderAnalyzer(), BodyContentAnalyzer()],
-        intel_sources=[],
     )
 
 
 class TestMassPhishingFullTier1:
-    """Auth failures + cousin domain + urgency + sensitive data → MALICIOUS."""
+    """Auth failures + cousin domain → MALICIOUS even without language signals."""
 
     def test_verdict_is_malicious(self):
         result = _engine().analyze(build_email_data(MASS_PHISHING["email"]))
@@ -39,11 +40,10 @@ class TestMassPhishingFullTier1:
         result = _engine().analyze(build_email_data(MASS_PHISHING["email"]))
         assert result.score >= 65.0
 
-    def test_three_active_categories(self):
+    def test_auth_and_sender_categories_active(self):
         result = _engine().analyze(build_email_data(MASS_PHISHING["email"]))
         assert SignalCategory.AUTHENTICATION in result.active_categories
         assert SignalCategory.SENDER_IDENTITY in result.active_categories
-        assert SignalCategory.BODY_CONTENT in result.active_categories
 
     def test_all_three_analyzers_in_scope(self):
         result = _engine().analyze(build_email_data(MASS_PHISHING["email"]))
@@ -53,7 +53,7 @@ class TestMassPhishingFullTier1:
 
 
 class TestSpearPhishCousinDomain:
-    """Cousin domain + content signals → LIKELY_MALICIOUS or MALICIOUS."""
+    """Cousin domain alone → LIKELY_MALICIOUS or MALICIOUS."""
 
     def test_score_at_least_35(self):
         result = _engine().analyze(build_email_data(SPEAR_PHISH_COUSIN_DOMAIN["email"]))
@@ -65,15 +65,13 @@ class TestSpearPhishCousinDomain:
 
 
 class TestBecWireTransfer:
-    """Freemail BEC — reply-to suppressed, only urgency content signal remains."""
+    """Freemail BEC carries no deterministic artifact (auth passes, sender
+    is freemail, no HTML form). Without the language analyzer this stays
+    SAFE — by design. Detection requires LanguageAssessmentAnalyzer."""
 
-    def test_urgency_detected(self):
+    def test_verdict_safe_without_language_analyzer(self):
         result = _engine().analyze(build_email_data(BEC_WIRE_TRANSFER["email"]))
-        assert SignalCategory.BODY_CONTENT in result.active_categories
-
-    def test_verdict_safe_or_suspicious(self):
-        result = _engine().analyze(build_email_data(BEC_WIRE_TRANSFER["email"]))
-        assert result.verdict in {Verdict.SAFE, Verdict.SUSPICIOUS}
+        assert result.verdict == Verdict.SAFE
 
 
 class TestLegitEmailsStaySafe:
