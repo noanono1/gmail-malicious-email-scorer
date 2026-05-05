@@ -24,7 +24,7 @@ function extractEmailData(messageId) {
     body_html: gmailMessage.getBody() || "",
     reply_to_address: extractAddress(replyToRaw),
     return_path_address: extractAddress(returnPathRaw),
-    headers: extractSecurityHeaders(gmailMessage),
+    headers: extractSecurityHeaders(gmailMessage, messageId),
     attachments: attachments,
     date: gmailMessage.getDate().toISOString(),
   };
@@ -70,26 +70,84 @@ var SECURITY_HEADERS = [
 ];
 
 /**
- * Extracts security-relevant headers using GmailMessage.getHeader().
- * Limitation: getHeader() returns one value per name, so repeated headers
- * (like Received, Authentication-Results) will only have their first value.
+ * Extracts security-relevant headers, preserving duplicates.
  *
- * TODO: switch to Gmail Advanced Service (Gmail.Users.Messages.get with
- * format:"metadata") to capture all repeated headers — the header analyzer
- * needs multiple Authentication-Results to see full SPF/DKIM/DMARC picture.
+ * Primary path: Gmail Advanced Service with format:"metadata" — returns
+ * payload.headers as an ordered array including every occurrence (the
+ * backend AuthenticationAnalyzer relies on seeing all Authentication-Results
+ * values to apply its "first MTA wins" rule).
+ *
+ * Fallback: GmailMessage.getHeader() per name. Only one value per repeated
+ * header, but the add-on still produces a usable payload if the API call
+ * fails (advanced service disabled, transient error, etc.).
  */
-function extractSecurityHeaders(gmailMessage) {
-  var headers = [];
+function extractSecurityHeaders(gmailMessage, messageId) {
+  try {
+    return fetchSecurityHeadersViaGmailApi(messageId);
+  } catch (error) {
+    console.warn(
+      "Gmail metadata API failed for " + messageId + " (" + error.message +
+      ") — falling back to GmailMessage.getHeader(). Repeated headers " +
+      "(Authentication-Results, Received, Received-SPF) may be truncated."
+    );
+    return extractSecurityHeadersFallback(gmailMessage);
+  }
+}
 
+/**
+ * Calls Gmail.Users.Messages.get with format:"metadata" to fetch only the
+ * named security headers — no body, no attachments downloaded. Preserves
+ * order and duplicates.
+ */
+function fetchSecurityHeadersViaGmailApi(messageId) {
+  var response = Gmail.Users.Messages.get("me", messageId, {
+    format: "metadata",
+    metadataHeaders: SECURITY_HEADERS,
+  });
+
+  var rawHeaders = (response && response.payload && response.payload.headers) || [];
+  var headers = rawHeaders.map(function (h) {
+    return { name: h.name, value: h.value };
+  });
+
+  logExtractedSecurityHeaders(headers, "gmail_api");
+  return headers;
+}
+
+/**
+ * Per-name extraction via GmailMessage.getHeader(). Only one value returned
+ * per header name — used as graceful degradation when the Advanced Service
+ * is unavailable.
+ */
+function extractSecurityHeadersFallback(gmailMessage) {
+  var headers = [];
   SECURITY_HEADERS.forEach(function (headerName) {
     var value = gmailMessage.getHeader(headerName);
     if (value) {
       headers.push({ name: headerName, value: value });
     }
   });
-
-  console.log("Extracted " + headers.length + " security headers.");
+  logExtractedSecurityHeaders(headers, "fallback");
   return headers;
+}
+
+/**
+ * Logs which headers were extracted and how many times each appeared,
+ * without dumping values. Authentication-Results and Received chains can
+ * leak internal routing/IP info — names + counts only.
+ */
+function logExtractedSecurityHeaders(headers, source) {
+  var counts = {};
+  headers.forEach(function (h) {
+    counts[h.name] = (counts[h.name] || 0) + 1;
+  });
+  var summary = Object.keys(counts).map(function (name) {
+    return name + "=" + counts[name];
+  }).join(", ");
+  console.log(
+    "Security headers via " + source + " — total " + headers.length +
+    (summary ? " (" + summary + ")" : "")
+  );
 }
 
 /**

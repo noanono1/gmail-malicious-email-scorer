@@ -1,9 +1,15 @@
+// INCONCLUSIVE is intentionally non-alarming: it means "we did not have
+// enough coverage to judge", not "we judged this and it looked bad". The
+// neutral gray + info glyph keeps the badge from reading like a finding.
+// Score is hidden in this state because there was nothing to score; see
+// buildVerdictSection.
 var VERDICT_STYLES = {
-  safe:             { color: "#1B8332", icon: "✓", label: "SAFE" },
-  suspicious:       { color: "#F9A825", icon: "⚠", label: "SUSPICIOUS" },
-  likely_malicious: { color: "#E65100", icon: "⚠", label: "LIKELY MALICIOUS" },
-  malicious:        { color: "#C62828", icon: "✕", label: "MALICIOUS" },
-  _unknown:         { color: "#757575", icon: "?", label: "UNKNOWN" },
+  safe:             { color: "#1B8332", icon: "✓", label: "SAFE",             hideScore: false },
+  inconclusive:     { color: "#5F6368", icon: "ⓘ", label: "INCONCLUSIVE",     hideScore: true  },
+  suspicious:       { color: "#F9A825", icon: "⚠", label: "SUSPICIOUS",       hideScore: false },
+  likely_malicious: { color: "#E65100", icon: "⚠", label: "LIKELY MALICIOUS", hideScore: false },
+  malicious:        { color: "#C62828", icon: "✕", label: "MALICIOUS",        hideScore: false },
+  _unknown:         { color: "#757575", icon: "?", label: "UNKNOWN",          hideScore: true  },
 };
 
 /**
@@ -37,19 +43,25 @@ function buildAnalysisCard(result, messageId) {
 }
 
 /**
- * Verdict badge + score.
+ * Verdict badge, with score appended unless the verdict style suppresses
+ * it. Score is hidden for INCONCLUSIVE (and for unrecognised verdicts)
+ * because a numeric score next to "we couldn't judge" is contradictory —
+ * the score field was always honest (sum of fired signals = 0), but
+ * displaying it alongside such a verdict reads as a bug to the user.
  */
 function buildVerdictSection(result, style) {
   var section = CardService.newCardSection();
 
-  section.addWidget(
-    CardService.newTextParagraph().setText(
-      "<b><font color=\"" + style.color + "\">" +
-      style.icon + " " + style.label +
-      "</font></b>          Score: " +
-      Math.round(result.score) + "/100"
-    )
-  );
+  var badge =
+    "<b><font color=\"" + style.color + "\">" +
+    style.icon + " " + style.label +
+    "</font></b>";
+
+  var text = style.hideScore
+    ? badge
+    : badge + "          Score: " + Math.round(result.score) + "/100";
+
+  section.addWidget(CardService.newTextParagraph().setText(text));
 
   return section;
 }
@@ -96,11 +108,11 @@ function buildSignalWidget(signal) {
 }
 
 /**
- * Collapsible blind spots section.
+ * Collapsible limitations section — what the analysis did not check.
  */
 function buildBlindSpotsSection(blindSpots) {
   var section = CardService.newCardSection()
-    .setHeader("Blind Spots (" + blindSpots.length + ")")
+    .setHeader("Limitations (" + blindSpots.length + ")")
     .setCollapsible(true)
     .setNumUncollapsibleWidgets(0);
 
