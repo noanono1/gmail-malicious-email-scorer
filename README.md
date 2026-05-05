@@ -20,11 +20,13 @@ Three things worth a closer look:
 
 The card is the user-facing surface — score, verdict, top signals (each with the verbatim evidence that triggered them), and a runtime-generated limitations panel.
 
-> **Screenshots pending.** Drop the files below into `docs/img/` and the references in this section will render.
->
-> - `docs/img/card-safe.png` — clean transactional email; verdict `safe`, limitations panel visible
-> - `docs/img/card-suspicious.png` — softfail + Reply-To mismatch; verdict `suspicious`
-> - `docs/img/card-malicious.png` — cousin domain + DMARC fail + IP-literal URL; verdict `malicious`
+**Safe verdict — legitimate Google OAuth notification.** Score `0/100`, no threat signals, four limitations declared. A `safe` verdict is never confused with "fully inspected" — the limitations panel always declares what the system *did not* check.
+
+![Safe verdict on a legitimate Google OAuth notification](docs/img/card-safe.png)
+
+**Malicious verdict — phishing with IP-literal URL and high-pressure language.** Score `71/100`, three categories firing across sender, content, and links. The `Content` finding is the language analyzer's structured assessment with the verbatim trigger quote — the deterministic and semantic analyzers stacking on the same email.
+
+![Malicious verdict on phishing with IP URL and pressure language](docs/img/card-malicious.png)
 
 ---
 
