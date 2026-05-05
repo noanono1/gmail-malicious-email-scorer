@@ -3,13 +3,16 @@
 // neutral gray + info glyph keeps the badge from reading like a finding.
 // Score is hidden in this state because there was nothing to score; see
 // buildVerdictSection.
+// hideBar suppresses the score bar where it would amplify severity that
+// the verdict doesn't carry — for SAFE the bar would render mostly empty
+// and read as "incomplete" rather than reassuring.
 var VERDICT_STYLES = {
-  safe:             { color: "#1B8332", icon: "✓", label: "SAFE",             hideScore: false },
-  inconclusive:     { color: "#5F6368", icon: "ⓘ", label: "INCONCLUSIVE",     hideScore: true  },
-  suspicious:       { color: "#F9A825", icon: "⚠", label: "SUSPICIOUS",       hideScore: false },
-  likely_malicious: { color: "#E65100", icon: "⚠", label: "LIKELY MALICIOUS", hideScore: false },
-  malicious:        { color: "#C62828", icon: "✕", label: "MALICIOUS",        hideScore: false },
-  _unknown:         { color: "#757575", icon: "?", label: "UNKNOWN",          hideScore: true  },
+  safe:             { color: "#1B8332", icon: "✓", label: "SAFE",             hideScore: false, hideBar: true  },
+  inconclusive:     { color: "#5F6368", icon: "ⓘ", label: "INCONCLUSIVE",     hideScore: true,  hideBar: true  },
+  suspicious:       { color: "#F9A825", icon: "⚠", label: "SUSPICIOUS",       hideScore: false, hideBar: false },
+  likely_malicious: { color: "#E65100", icon: "⚠", label: "LIKELY MALICIOUS", hideScore: false, hideBar: false },
+  malicious:        { color: "#C62828", icon: "✕", label: "MALICIOUS",        hideScore: false, hideBar: false },
+  _unknown:         { color: "#757575", icon: "?", label: "UNKNOWN",          hideScore: true,  hideBar: true  },
 };
 
 // Display order is a narrative: who sent it → how it was authenticated →
@@ -80,9 +83,30 @@ function buildVerdictSection(result, style) {
       "<b><font color=\"" + style.color + "\" size=\"6\">" + score + "</font></b>" +
       "<font color=\"#5F6368\"> / 100</font>";
     section.addWidget(CardService.newTextParagraph().setText(scoreHtml));
+    if (!style.hideBar) {
+      section.addWidget(
+        CardService.newTextParagraph().setText(buildScoreBarHtml(score, style.color))
+      );
+    }
   }
 
   return section;
+}
+
+/**
+ * 10-block bar where each block represents 10 points. Filled blocks share
+ * the verdict color so the same severity reads the same anywhere on the
+ * card; empty blocks use a light neutral gray.
+ */
+function buildScoreBarHtml(score, color) {
+  var TOTAL_BLOCKS = 10;
+  var filledCount = Math.max(0, Math.min(TOTAL_BLOCKS, Math.round(score / 10)));
+
+  var filled = new Array(filledCount + 1).join("▓");
+  var empty = new Array(TOTAL_BLOCKS - filledCount + 1).join("░");
+
+  return "<font color=\"" + color + "\">" + filled + "</font>" +
+         "<font color=\"#DADCE0\">" + empty + "</font>";
 }
 
 /**
