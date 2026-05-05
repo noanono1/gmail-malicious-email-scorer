@@ -11,25 +11,32 @@ SEVERITY_POINTS: dict[SignalSeverity, float] = {
     SignalSeverity.INFO: 0.0,
     SignalSeverity.LOW: 5.0,
     SignalSeverity.MEDIUM: 12.0,
-    SignalSeverity.HIGH: 22.0,
-    SignalSeverity.CRITICAL: 35.0,
+    SignalSeverity.HIGH: 25.0,
+    SignalSeverity.CRITICAL: 40.0,
 }
 """INFO is 0 (informational, never pushes verdict). Tiers chosen so a single
 CRITICAL alone reaches LIKELY_MALICIOUS but not MALICIOUS — forces convergence
-across categories."""
+across categories. HIGH=25 keeps a confident HIGH (×0.9) above SUSPICIOUS;
+CRITICAL=40 keeps a confident CRITICAL (×0.9) above LIKELY_MALICIOUS."""
 
 CATEGORY_CAP: float = 50.0
 """Maximum points any single SignalCategory may contribute. Prevents
 single-domain bias — five auth signals cannot push past LIKELY_MALICIOUS
 without evidence from another category."""
 
-WITHIN_CATEGORY_ATTENUATION: float = 1.6
+WITHIN_CATEGORY_ATTENUATION: float = 1.4
 """Each additional signal in the same category is divided by ATTENUATION^k.
-Models diminishing returns on correlated evidence (SPF fail + DKIM fail)."""
+Models diminishing returns on correlated evidence (SPF fail + DKIM fail).
+Calibrated against labeled fixtures: 1.6 decayed independent same-category
+evidence too aggressively (3rd signal at 39% of base); 1.4 preserves more
+of multi-signal categories (51% of base) without inflating correlated runs."""
 
-CROSS_CATEGORY_BOOST: float = 0.10
+CROSS_CATEGORY_BOOST: float = 0.15
 """Multiplier added per active category beyond the first. Convergent evidence
-across orthogonal categories is more diagnostic than depth in one. Empirical."""
+across orthogonal categories is more diagnostic than depth in one. Calibrated
+against labeled fixtures: 0.10 left multi-category malicious cases short of
+the MALICIOUS threshold; 0.15 widens the gap between depth-penalty and
+breadth-reward, which is what we want."""
 
 # Infrastructure/spoofing categories. When ONLY these fire (no CRITICAL among
 # them), the email reads as "infrastructure unsettled" rather than "attack

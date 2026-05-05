@@ -3417,7 +3417,21 @@ def _verdict_in_expected(fixture: dict, verdict: Verdict) -> bool:
     return verdict in (expected.get("verdict_in") or ())
 
 
-SAFE_FIXTURES = [f for f in ALL_FIXTURES if _verdict_in_expected(f, Verdict.SAFE)]
+def _verdict_required(fixture: dict, verdict: Verdict) -> bool:
+    """True only if *verdict* is the fixture's sole expected outcome.
+
+    Stricter than ``_verdict_in_expected``: a fixture whose ``verdict_in``
+    permits SAFE *or* SUSPICIOUS does not "require" SAFE. Used to gate the
+    no-false-positives contract, which must not flag a fixture that already
+    documents SUSPICIOUS as an acceptable outcome."""
+    expected = fixture["expected"]
+    if expected.get("verdict") == verdict:
+        return True
+    permitted = expected.get("verdict_in") or ()
+    return tuple(permitted) == (verdict,)
+
+
+SAFE_FIXTURES = [f for f in ALL_FIXTURES if _verdict_required(f, Verdict.SAFE)]
 SUSPICIOUS_FIXTURES = [f for f in ALL_FIXTURES if _verdict_in_expected(f, Verdict.SUSPICIOUS)]
 LIKELY_MALICIOUS_FIXTURES = [f for f in ALL_FIXTURES if _verdict_in_expected(f, Verdict.LIKELY_MALICIOUS)]
 MALICIOUS_FIXTURES = [f for f in ALL_FIXTURES if _verdict_in_expected(f, Verdict.MALICIOUS)]

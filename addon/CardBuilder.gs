@@ -12,6 +12,19 @@ var VERDICT_STYLES = {
   _unknown:         { color: "#757575", icon: "?", label: "UNKNOWN",          hideScore: true  },
 };
 
+// Display order is a narrative: who sent it → how it was authenticated →
+// what's inside → where it points → what's attached. Categories with no
+// fired signals are dropped during bucketing.
+var CATEGORY_DISPLAY = [
+  { key: "sender_identity", label: "Sender" },
+  { key: "authentication",  label: "Authentication" },
+  { key: "body_content",    label: "Content" },
+  { key: "url_structure",   label: "Links" },
+  { key: "attachment",      label: "Attachments" },
+];
+
+var SEVERITY_RANK = { info: 0, low: 1, medium: 2, high: 3, critical: 4 };
+
 /**
  * Builds the main analysis result card from the backend response.
  */
@@ -57,11 +70,15 @@ function buildVerdictSection(result, style) {
     style.icon + " " + style.label +
     "</font></b>";
 
-  var text = style.hideScore
-    ? badge
-    : badge + "          Score: " + Math.round(result.score) + "/100";
+  section.addWidget(CardService.newTextParagraph().setText(badge));
 
-  section.addWidget(CardService.newTextParagraph().setText(text));
+  if (!style.hideScore) {
+    var score = Math.round(result.score);
+    var scoreHtml =
+      "<b><font color=\"" + style.color + "\" size=\"6\">" + score + "</font></b>" +
+      "<font color=\"#5F6368\"> / 100</font>";
+    section.addWidget(CardService.newTextParagraph().setText(scoreHtml));
+  }
 
   return section;
 }
@@ -80,28 +97,85 @@ function buildSummarySection(explanation) {
 }
 
 /**
- * Top signals with severity, category, summary, and contribution.
+ * Top signals grouped by category. Category headers carry an aggregate
+ * icon driven by the worst severity in the bucket; the per-signal widget
+ * drops the now-redundant category label.
  */
 function buildFindingsSection(signals) {
-  var section = CardService.newCardSection().setHeader("Top Findings");
+  var section = CardService.newCardSection()
+    .setHeader("Top Findings (" + signals.length + ")");
 
-  signals.forEach(function (signal) {
-    section.addWidget(buildSignalWidget(signal));
+  bucketSignalsByCategory(signals).forEach(function (bucket) {
+    section.addWidget(buildCategoryHeaderWidget(bucket));
+    bucket.signals.forEach(function (signal) {
+      section.addWidget(buildSignalWidget(signal));
+    });
   });
 
   return section;
 }
 
 /**
- * Single signal rendered as a DecoratedText widget.
+ * Buckets signals into CATEGORY_DISPLAY order, preserving incoming signal
+ * order within each bucket and dropping empty categories. Each bucket
+ * carries the max severity seen, used to drive the header glyph/color.
+ */
+function bucketSignalsByCategory(signals) {
+  var byKey = {};
+  CATEGORY_DISPLAY.forEach(function (entry) {
+    byKey[entry.key] = { key: entry.key, label: entry.label, signals: [], maxSeverityRank: -1, maxSeverity: "info" };
+  });
+
+  signals.forEach(function (signal) {
+    var bucket = byKey[signal.category];
+    if (!bucket) return;
+    bucket.signals.push(signal);
+    var rank = SEVERITY_RANK[signal.severity];
+    if (rank > bucket.maxSeverityRank) {
+      bucket.maxSeverityRank = rank;
+      bucket.maxSeverity = signal.severity;
+    }
+  });
+
+  return CATEGORY_DISPLAY
+    .map(function (entry) { return byKey[entry.key]; })
+    .filter(function (bucket) { return bucket.signals.length > 0; });
+}
+
+/**
+ * Category header — palette mirrors VERDICT_STYLES so the same severity
+ * always reads the same colour anywhere on the card.
+ */
+function buildCategoryHeaderWidget(bucket) {
+  var rank = bucket.maxSeverityRank;
+  var style;
+  if (rank >= SEVERITY_RANK.high) {
+    style = { icon: "✕", color: "#C62828" };
+  } else if (rank === SEVERITY_RANK.medium) {
+    style = { icon: "⚠", color: "#F9A825" };
+  } else {
+    style = { icon: "ⓘ", color: "#5F6368" };
+  }
+
+  var html =
+    "<b><font color=\"" + style.color + "\">" +
+    style.icon + "  " + bucket.label +
+    " (" + bucket.signals.length + ")" +
+    "</font></b>";
+
+  return CardService.newTextParagraph().setText(html);
+}
+
+/**
+ * Single signal rendered as a DecoratedText widget. Category is implicit
+ * from the surrounding bucket header, so the top label carries severity only.
  */
 function buildSignalWidget(signal) {
   var severityLabel = signal.severity.toUpperCase();
-  var categoryLabel = signal.category.replace(/_/g, " ").toUpperCase();
   var contribution = "+" + signal.score_contribution.toFixed(1) + " pts";
 
   return CardService.newDecoratedText()
-    .setTopLabel(categoryLabel + "  ·  " + severityLabel)
+    .setTopLabel(severityLabel)
     .setText(signal.summary)
     .setWrapText(true)
     .setBottomLabel(contribution);
