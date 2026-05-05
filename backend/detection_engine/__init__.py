@@ -1,7 +1,6 @@
 from detection_engine.domain.email import Attachment, EmailData, EmailHeaders
 from detection_engine.domain.enums import (
     BlindSpotArea,
-    IntelSourceType,
     SignalCategory,
     SignalSeverity,
     Verdict,
@@ -21,7 +20,6 @@ __all__ = [
     "AnalysisOutput",
     "EmailData",
     "EmailHeaders",
-    "IntelSourceType",
     "ScoredSignal",
     "Signal",
     "SignalCategory",

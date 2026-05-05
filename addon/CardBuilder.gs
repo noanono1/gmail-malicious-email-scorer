@@ -158,10 +158,6 @@ function formatScopeLines(scope) {
     lines.push("Analyzers: none (skeleton mode)");
   }
 
-  if (scope.intel_sources_run.length > 0) {
-    lines.push("Intel: " + scope.intel_sources_run.join(", "));
-  }
-
   lines.push(
     "HTML: " + (scope.has_html ? "yes" : "no") +
     "  |  Attachments: " + (scope.has_attachments ? "yes" : "no") +

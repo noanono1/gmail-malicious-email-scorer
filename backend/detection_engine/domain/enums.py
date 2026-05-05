@@ -3,6 +3,7 @@ from enum import Enum
 
 class Verdict(str, Enum):
     SAFE = "safe"
+    INCONCLUSIVE = "inconclusive"
     SUSPICIOUS = "suspicious"
     LIKELY_MALICIOUS = "likely_malicious"
     MALICIOUS = "malicious"
@@ -30,12 +31,7 @@ class BlindSpotArea(str, Enum):
     URL_DESTINATION = "url_destination"
     AUTHENTICATION_HEADERS = "authentication_headers"
     SENDER_IDENTITY = "sender_identity"
-    INTEL_SOURCE_UNAVAILABLE = "intel_source_unavailable"
     QR_CODE = "qr_code"
     HTML_RENDERING = "html_rendering"
     THREAD_HISTORY = "thread_history"
     LANGUAGE_ASSESSMENT = "language_assessment"
-
-
-class IntelSourceType(str, Enum):
-    SAFE_BROWSING = "safe_browsing"

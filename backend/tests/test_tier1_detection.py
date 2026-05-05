@@ -34,7 +34,6 @@ def _build_engine() -> DetectionEngine:
             UrlStructureAnalyzer(),
             AttachmentAnalyzer(),
         ],
-        intel_sources=[],
     )
 
 

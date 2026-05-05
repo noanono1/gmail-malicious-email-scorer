@@ -130,7 +130,6 @@ class TestValidSignedRequest:
         assert isinstance(scope, dict)
         assert set(scope.keys()) >= {
             "analyzers_run",
-            "intel_sources_run",
             "has_html",
             "has_attachments",
             "has_auth_headers",

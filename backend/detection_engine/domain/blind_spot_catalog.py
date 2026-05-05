@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from detection_engine.domain.email import EmailData
-from detection_engine.domain.enums import BlindSpotArea, IntelSourceType
+from detection_engine.domain.enums import BlindSpotArea
 from detection_engine.domain.signals import BlindSpot
 
 # ── Predicates (closed set of conditions) ────────────────────────────
@@ -88,24 +88,6 @@ SENDER_ADDRESS_UNPARSEABLE = BlindSpot(
         "reply-to and return-path mismatch) were skipped"
     ),
 )
-
-
-# ── Intel-source (dynamic) ──────────────────────────────────────────
-
-def intel_source_not_configured(source_type: IntelSourceType) -> BlindSpot:
-    return BlindSpot(
-        area=BlindSpotArea.INTEL_SOURCE_UNAVAILABLE,
-        reason=f"{source_type.value} not configured",
-        risk_note=f"Threat intelligence not consulted — {source_type.value} was not queried",
-    )
-
-
-def intel_source_failed(source_type: IntelSourceType) -> BlindSpot:
-    return BlindSpot(
-        area=BlindSpotArea.INTEL_SOURCE_UNAVAILABLE,
-        reason=f"{source_type.value} query failed",
-        risk_note=f"Threat intelligence not consulted — {source_type.value} was not queried",
-    )
 
 
 LANGUAGE_ASSESSMENT_UNAVAILABLE = BlindSpot(

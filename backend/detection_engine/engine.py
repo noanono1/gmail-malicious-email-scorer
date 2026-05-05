@@ -1,63 +1,51 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 from logging import getLogger
 
 from detection_engine.analyzers.base import BaseAnalyzer
 from detection_engine.domain import blind_spot_catalog
 from detection_engine.domain.email import EmailData
-from detection_engine.domain.enums import IntelSourceType, SignalCategory, Verdict
+from detection_engine.domain.enums import BlindSpotArea, SignalCategory, Verdict
 from detection_engine.domain.exceptions import AnalyzerCrashed
 from detection_engine.domain.signals import AnalysisOutput, BlindSpot, ScoredSignal, Signal
 from detection_engine.domain.verdict import AnalysisResult, AnalysisScope
-from detection_engine.intel_sources.base import ThreatIntelSource
 from detection_engine.scoring import classify_verdict, score_signals
 
 logger = getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class IntelRunResult:
-    """Result of running all intel sources — extends AnalysisOutput with execution metadata."""
-
-    output: AnalysisOutput
-    sources_executed: tuple[IntelSourceType, ...]
+# Blind spots representing a failure to inspect a primary content channel.
+# AUTHENTICATION_HEADERS is excluded — missing auth headers is a routine
+# environmental gap (most add-on extractions don't surface them).
+_DIAGNOSTIC_CRITICAL_BLIND_SPOT_AREAS: frozenset[BlindSpotArea] = frozenset({
+    BlindSpotArea.LANGUAGE_ASSESSMENT,
+})
 
 
 class DetectionEngine:
-    """Orchestrates analyzers and intel sources to produce an AnalysisResult.
+    """Orchestrates analyzers to produce an AnalysisResult."""
 
-    Constructor takes lists of analyzers and intel sources (both injected).
-    Single public method: analyze(email) -> AnalysisResult."""
-
-    def __init__(
-        self,
-        analyzers: list[BaseAnalyzer],
-        intel_sources: list[ThreatIntelSource],
-    ) -> None:
+    def __init__(self, analyzers: list[BaseAnalyzer]) -> None:
         self._analyzers = analyzers
-        self._intel_sources = intel_sources
 
     def analyze(self, email: EmailData) -> AnalysisResult:
-        # Collect structural blind spots up front so even a "safe" verdict reports what we couldn't inspect (e.g. encrypted attachments).
         structural_blind_spots = tuple(
             blind_spot for blind_spot in blind_spot_catalog.STRUCTURAL
             if blind_spot.applies is None or blind_spot.applies(email)
         )
 
         analyzer_output = self._run_analyzers(email)
-        intel_result = self._run_intel_sources(email)
 
-        all_signals = analyzer_output.signals + intel_result.output.signals
-        blind_spots = structural_blind_spots + analyzer_output.blind_spots + intel_result.output.blind_spots
+        all_signals = analyzer_output.signals
+        blind_spots = structural_blind_spots + analyzer_output.blind_spots
 
         report = score_signals(all_signals)
         verdict = classify_verdict(report.final_score)
+        verdict = _floor_verdict_for_inspection_gaps(verdict, all_signals, blind_spots)
         top_signals = _pick_top_signals(report.scored_signals, count=3)
 
         scope = AnalysisScope(
             analyzers_run=tuple(a.name for a in self._analyzers),
-            intel_sources_run=intel_result.sources_executed,
             has_html=bool(email.body_html),
             has_attachments=bool(email.attachments),
             has_auth_headers="authentication-results" in email.headers,
@@ -92,34 +80,6 @@ class DetectionEngine:
 
         return AnalysisOutput(signals=tuple(signals), blind_spots=tuple(blind_spots))
 
-    def _run_intel_sources(self, email: EmailData) -> IntelRunResult:
-        signals: list[Signal] = []
-        blind_spots: list[BlindSpot] = []
-        executed_source_types: list[IntelSourceType] = []
-
-        for source in self._intel_sources:
-            if not source.is_available():
-                blind_spots.append(
-                    blind_spot_catalog.intel_source_not_configured(source.source_type)
-                )
-                continue
-            try:
-                intel_output = source.query(email)
-            except Exception:
-                logger.exception("Intel source crashed: %s", source.source_type.value)
-                blind_spots.append(
-                    blind_spot_catalog.intel_source_failed(source.source_type)
-                )
-                continue
-            signals.extend(intel_output.signals)
-            blind_spots.extend(intel_output.blind_spots)
-            executed_source_types.append(source.source_type)
-
-        return IntelRunResult(
-            output=AnalysisOutput(signals=tuple(signals), blind_spots=tuple(blind_spots)),
-            sources_executed=tuple(executed_source_types),
-        )
-
 
 def _pick_top_signals(
     scored_signals: tuple[ScoredSignal, ...], count: int
@@ -128,25 +88,49 @@ def _pick_top_signals(
     return tuple(by_contribution[:count])
 
 
+def _floor_verdict_for_inspection_gaps(
+    verdict: Verdict,
+    signals: tuple[Signal, ...],
+    blind_spots: tuple[BlindSpot, ...],
+) -> Verdict:
+    """SAFE → INCONCLUSIVE when zero signals fired but a primary channel
+    was unavailable. INCONCLUSIVE is orthogonal to the SAFE→MALICIOUS
+    ladder: "no coverage to judge", not "judged and found middling"."""
+    if signals or verdict != Verdict.SAFE:
+        return verdict
+    has_critical_gap = any(
+        blind_spot.area in _DIAGNOSTIC_CRITICAL_BLIND_SPOT_AREAS
+        for blind_spot in blind_spots
+    )
+    return Verdict.INCONCLUSIVE if has_critical_gap else verdict
+
+
 def _explain(
     verdict: Verdict,
     top_signals: tuple[ScoredSignal, ...],
     active_categories: frozenset[SignalCategory],
     blind_spots: tuple[BlindSpot, ...],
 ) -> str:
-    """Render a human-readable explanation of an analysis result.
+    """Render a human-readable explanation.
 
-    `active_categories` comes from scoring and reflects every category that
-    contributed > 0 points — the same source of truth used for the
-    cross-category boost. Deriving it from `top_signals` instead would
-    undercount whenever signals exist outside the top 3 by contribution."""
+    ``active_categories`` is from scoring (every category > 0 points).
+    Deriving from ``top_signals`` would undercount past the top 3."""
     if not top_signals:
-        if blind_spots:
-            return (
-                f"Verdict: {verdict.value}. \n No threat signals detected, "
-                f"but {len(blind_spots)} area(s) could not be inspected."
-            )
-        return f"Verdict: {verdict.value}. \n No threat signals detected."
+        if verdict == Verdict.SAFE:
+            if blind_spots:
+                return (
+                    f"Verdict: {verdict.value}. \n No threat signals detected, "
+                    f"but {len(blind_spots)} area(s) could not be inspected."
+                )
+            return f"Verdict: {verdict.value}. \n No threat signals detected."
+        # No signals + non-SAFE means the inspection-gap floor applied.
+        # Avoid the word "score" — it is 0 and the floor exists to make
+        # sense of that.
+        return (
+            f"Verdict: {verdict.value}.\n"
+            f"Primary content could not be inspected "
+            f"({len(blind_spots)} area(s)) — not enough coverage to judge."
+        )
 
     header = f"Verdict: {verdict.value}."
 

@@ -10,7 +10,6 @@ from detection_engine import (
     BlindSpotArea,
     EmailData,
     EmailHeaders,
-    IntelSourceType,
     ScoredSignal,
     SignalCategory,
     SignalSeverity,
@@ -111,7 +110,6 @@ class BlindSpotResponse(BaseModel):
 
 class AnalysisScopeResponse(BaseModel):
     analyzers_run: list[str]
-    intel_sources_run: list[IntelSourceType]
     has_html: bool
     has_attachments: bool
     has_auth_headers: bool
@@ -158,7 +156,6 @@ class AnalyzeResponse(BaseModel):
             ],
             scope=AnalysisScopeResponse(
                 analyzers_run=analysis_result.scope.analyzers_run,
-                intel_sources_run=analysis_result.scope.intel_sources_run,
                 has_html=analysis_result.scope.has_html,
                 has_attachments=analysis_result.scope.has_attachments,
                 has_auth_headers=analysis_result.scope.has_auth_headers,

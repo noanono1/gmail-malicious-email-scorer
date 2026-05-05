@@ -15,7 +15,9 @@ from detection_engine import (
     SignalSeverity,
 )
 from detection_engine.analyzers.base import BaseAnalyzer
-from detection_engine.domain.signals import AnalysisOutput, Signal
+from detection_engine.domain.blind_spot_catalog import LANGUAGE_ASSESSMENT_UNAVAILABLE
+from detection_engine.domain.enums import Verdict
+from detection_engine.domain.signals import AnalysisOutput, BlindSpot, Signal
 
 
 def _empty_email() -> EmailData:
@@ -32,18 +34,24 @@ def _empty_email() -> EmailData:
 
 
 class _FakeAnalyzer(BaseAnalyzer):
-    """Test double that emits a fixed set of signals."""
+    """Test double that emits a fixed set of signals and blind spots."""
 
-    def __init__(self, name: str, signals: tuple[Signal, ...]) -> None:
+    def __init__(
+        self,
+        name: str,
+        signals: tuple[Signal, ...],
+        blind_spots: tuple[BlindSpot, ...] = (),
+    ) -> None:
         self._name = name
         self._signals = signals
+        self._blind_spots = blind_spots
 
     @property
     def name(self) -> str:
         return self._name
 
     def analyze(self, email: EmailData) -> AnalysisOutput:
-        return AnalysisOutput(signals=self._signals, blind_spots=())
+        return AnalysisOutput(signals=self._signals, blind_spots=self._blind_spots)
 
 
 def _signal(
@@ -64,13 +72,12 @@ def _signal(
 def _engine_with(*signals: Signal) -> DetectionEngine:
     return DetectionEngine(
         analyzers=[_FakeAnalyzer("fake", tuple(signals))],
-        intel_sources=[],
     )
 
 
 class TestExplanationWithoutSignals:
     def test_no_threat_signals_phrasing(self):
-        engine = DetectionEngine(analyzers=[], intel_sources=[])
+        engine = DetectionEngine(analyzers=[])
         result = engine.analyze(_empty_email())
         assert "No threat signals detected" in result.explanation
 
@@ -106,3 +113,49 @@ class TestExplanationCategoryCount:
         assert SignalCategory.BODY_CONTENT not in top_three_categories
         assert len(result.active_categories) == 4
         assert "Evidence spans 4 categories." in result.explanation
+
+
+class TestVerdictFloorOnInspectionGap:
+    """When the language analyzer cannot run, an email with zero signals
+    must not be reported as SAFE — the body was never assessed at all.
+    The floor routes to INCONCLUSIVE rather than SUSPICIOUS so a score
+    of 0 alongside the verdict reads as 'not scored', not as a bug."""
+
+    def test_language_assessment_blind_spot_floors_safe_to_inconclusive(self):
+        engine = DetectionEngine(
+            analyzers=[_FakeAnalyzer(
+                "fake", signals=(), blind_spots=(LANGUAGE_ASSESSMENT_UNAVAILABLE,),
+            )],
+        )
+        result = engine.analyze(_empty_email())
+
+        assert result.verdict == Verdict.INCONCLUSIVE
+        assert result.score == 0
+        assert "could not be inspected" in result.explanation
+        assert "not enough coverage to judge" in result.explanation
+
+    def test_routine_blind_spots_alone_do_not_floor_verdict(self):
+        # Empty engine still emits the structural THREAD_HISTORY blind
+        # spot. That alone (no LANGUAGE_ASSESSMENT) must keep verdict SAFE.
+        engine = DetectionEngine(analyzers=[])
+        result = engine.analyze(_empty_email())
+
+        assert result.verdict == Verdict.SAFE
+        assert "No threat signals detected" in result.explanation
+
+    def test_floor_does_not_downgrade_existing_signal_verdict(self):
+        # When real signals fire, the floor must not touch the verdict —
+        # the score-driven classification already reflects evidence.
+        engine = DetectionEngine(
+            analyzers=[_FakeAnalyzer(
+                "fake",
+                signals=(_signal(SignalCategory.SENDER_IDENTITY, SignalSeverity.CRITICAL, "s1"),),
+                blind_spots=(LANGUAGE_ASSESSMENT_UNAVAILABLE,),
+            )],
+        )
+        result = engine.analyze(_empty_email())
+
+        assert result.verdict in (
+            Verdict.SUSPICIOUS, Verdict.LIKELY_MALICIOUS, Verdict.MALICIOUS,
+        )
+        assert result.score > 0
