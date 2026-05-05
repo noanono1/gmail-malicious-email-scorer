@@ -1,5 +1,6 @@
 """Unit tests for the scoring algorithm — severity points, attenuation,
-category cap, cross-category boost, and verdict classification."""
+category cap, cross-category boost, infrastructure-only dampener,
+and verdict classification."""
 
 from __future__ import annotations
 
@@ -10,6 +11,7 @@ from detection_engine.domain.signals import Signal
 from detection_engine.scoring import (
     CATEGORY_CAP,
     CROSS_CATEGORY_BOOST,
+    INFRASTRUCTURE_ONLY_DAMPENER,
     SEVERITY_POINTS,
     WITHIN_CATEGORY_ATTENUATION,
     classify_verdict,
@@ -165,9 +167,11 @@ class TestCategoryCap:
 
 class TestCrossCategoryBoost:
     def test_two_categories_boosted(self):
-        auth = _signal(SignalSeverity.HIGH, category=SignalCategory.AUTHENTICATION)
+        # Use BODY_CONTENT + URL_STRUCTURE so the infrastructure-only
+        # dampener does not engage — that is tested separately.
         body = _signal(SignalSeverity.HIGH, category=SignalCategory.BODY_CONTENT)
-        report = score_signals([auth, body])
+        url = _signal(SignalSeverity.HIGH, category=SignalCategory.URL_STRUCTURE)
+        report = score_signals([body, url])
 
         base = SEVERITY_POINTS[SignalSeverity.HIGH]
         raw_total = base * 2
@@ -209,6 +213,64 @@ class TestCrossCategoryBoost:
         signals += [_signal(SignalSeverity.HIGH, category=cat) for cat in SignalCategory]
         report = score_signals(signals)
         assert report.final_score <= 100.0
+
+
+# ---------------------------------------------------------------------------
+# Infrastructure-only dampener — scattered weak amplifiers don't synthesize
+# a high verdict on their own
+# ---------------------------------------------------------------------------
+
+
+class TestInfrastructureOnlyDampener:
+    def test_two_infrastructure_categories_no_critical_dampened(self):
+        # SPF softfail (HIGH × 0.7) + Reply-To mismatch (HIGH × 1.0) —
+        # both infrastructure, neither at CRITICAL-level contribution.
+        # Without dampener they sum to ~37 × 1.10 = 41 → LIKELY_MALICIOUS.
+        # With dampener: × 0.85 → 35 → still LIKELY_MALICIOUS borderline.
+        # Regardless, dampener must apply.
+        spf = _signal(SignalSeverity.HIGH, category=SignalCategory.AUTHENTICATION, confidence=0.7)
+        sender = _signal(SignalSeverity.HIGH, category=SignalCategory.SENDER_IDENTITY)
+        report = score_signals([spf, sender])
+
+        spf_pts = SEVERITY_POINTS[SignalSeverity.HIGH] * 0.7
+        sender_pts = SEVERITY_POINTS[SignalSeverity.HIGH]
+        raw = spf_pts + sender_pts
+        expected = raw * (1.0 + CROSS_CATEGORY_BOOST) * INFRASTRUCTURE_ONLY_DAMPENER
+        assert report.final_score == pytest.approx(expected)
+
+    def test_decisive_infrastructure_signal_disables_dampener(self):
+        # DMARC fail is CRITICAL — its contribution alone clears 35,
+        # which means the email already has a decisive infrastructure
+        # finding. Adding a sender mismatch should not get dampened.
+        dmarc = _signal(SignalSeverity.CRITICAL, category=SignalCategory.AUTHENTICATION)
+        sender = _signal(SignalSeverity.HIGH, category=SignalCategory.SENDER_IDENTITY)
+        report = score_signals([dmarc, sender])
+
+        # Note: 35 + 22 = 57, then × 1.10 = 62.7 (no dampener).
+        expected = (SEVERITY_POINTS[SignalSeverity.CRITICAL] + SEVERITY_POINTS[SignalSeverity.HIGH]) * (1.0 + CROSS_CATEGORY_BOOST)
+        assert report.final_score == pytest.approx(expected)
+
+    def test_purpose_bearing_category_disables_dampener(self):
+        # As soon as a non-infrastructure category fires (here BODY_CONTENT),
+        # the email is no longer "infrastructure only" and the dampener does
+        # not apply — the body declares what the email is doing.
+        spf = _signal(SignalSeverity.HIGH, category=SignalCategory.AUTHENTICATION, confidence=0.7)
+        body = _signal(SignalSeverity.HIGH, category=SignalCategory.BODY_CONTENT)
+        report = score_signals([spf, body])
+
+        spf_pts = SEVERITY_POINTS[SignalSeverity.HIGH] * 0.7
+        body_pts = SEVERITY_POINTS[SignalSeverity.HIGH]
+        expected = (spf_pts + body_pts) * (1.0 + CROSS_CATEGORY_BOOST)
+        assert report.final_score == pytest.approx(expected)
+
+    def test_single_infrastructure_category_unaffected(self):
+        # Three SPF/DKIM/DMARC signals all in AUTHENTICATION (1 active
+        # category) — dampener requires ≥2 active categories.
+        signals = [_signal(SignalSeverity.CRITICAL, category=SignalCategory.AUTHENTICATION) for _ in range(3)]
+        report = score_signals(signals)
+
+        # Just the within-category cap — no boost, no dampener.
+        assert report.final_score == pytest.approx(CATEGORY_CAP)
 
 
 # ---------------------------------------------------------------------------

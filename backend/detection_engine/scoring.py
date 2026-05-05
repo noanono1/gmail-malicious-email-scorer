@@ -14,10 +14,9 @@ SEVERITY_POINTS: dict[SignalSeverity, float] = {
     SignalSeverity.HIGH: 22.0,
     SignalSeverity.CRITICAL: 35.0,
 }
-"""Base points per severity tier. INFO is 0 because INFO signals are
-informational only — they appear in the report but never push the verdict.
-Tiers chosen so a single CRITICAL alone reaches LIKELY_MALICIOUS but not
-MALICIOUS, forcing convergence across categories."""
+"""INFO is 0 (informational, never pushes verdict). Tiers chosen so a single
+CRITICAL alone reaches LIKELY_MALICIOUS but not MALICIOUS — forces convergence
+across categories."""
 
 CATEGORY_CAP: float = 50.0
 """Maximum points any single SignalCategory may contribute. Prevents
@@ -25,14 +24,26 @@ single-domain bias — five auth signals cannot push past LIKELY_MALICIOUS
 without evidence from another category."""
 
 WITHIN_CATEGORY_ATTENUATION: float = 1.6
-"""Each additional signal in the same category is divided by ATTENUATION^k
-(k = 0 for the first, 1 for the second, ...). Models diminishing returns
-on correlated evidence — SPF fail and DKIM fail almost always co-occur."""
+"""Each additional signal in the same category is divided by ATTENUATION^k.
+Models diminishing returns on correlated evidence (SPF fail + DKIM fail)."""
 
-CROSS_CATEGORY_BOOST: float = 0.08
-"""Multiplier added per additional active category beyond the first.
-Two categories → x1.08, three → x1.16. Reflects that convergent evidence
-across orthogonal categories is far more diagnostic than depth in one."""
+CROSS_CATEGORY_BOOST: float = 0.10
+"""Multiplier added per active category beyond the first. Convergent evidence
+across orthogonal categories is more diagnostic than depth in one. Empirical."""
+
+# Infrastructure/spoofing categories. When ONLY these fire (no CRITICAL among
+# them), the email reads as "infrastructure unsettled" rather than "attack
+# detected" — without this dampener the cross-category sum can inflate that
+# into LIKELY_MALICIOUS. URL/BODY/ATTACHMENT signals override the dampener.
+_INFRASTRUCTURE_CATEGORIES: frozenset[SignalCategory] = frozenset({
+    SignalCategory.AUTHENTICATION,
+    SignalCategory.SENDER_IDENTITY,
+})
+
+INFRASTRUCTURE_ONLY_DAMPENER: float = 0.78
+"""Applied when ≥2 infrastructure categories fire and none clears CRITICAL.
+Empirical: 0.85 leaves softfail+mismatch above the LIKELY_MALICIOUS threshold;
+0.65 demotes genuine spoofing patterns that should read LIKELY_MALICIOUS."""
 
 VERDICT_THRESHOLDS: tuple[tuple[float, Verdict], ...] = (
     (65.0, Verdict.MALICIOUS),
@@ -40,19 +51,17 @@ VERDICT_THRESHOLDS: tuple[tuple[float, Verdict], ...] = (
     (15.0, Verdict.SUSPICIOUS),
     (0.0, Verdict.SAFE),
 )
-"""Lower bounds, checked in descending order. classify() picks the highest
-tier whose bound the score meets. Tiers chosen so a typical legitimate email
-lands well below 15 and an obvious phishing campaign lands above 65."""
+"""Lower bounds, descending. Tiers chosen so a legitimate email lands well
+below 15 and an obvious phishing campaign lands above 65."""
 
 
 @dataclass(frozen=True)
 class ScoringReport:
-    """Pure result of one scoring run over a set of Signals.
+    """Pure result of one scoring run.
 
-    `scored_signals` preserves the input order — callers can map back to
-    their original sequence by index. Per-signal contribution is
-    post-attenuation and post-cap, but does NOT include the cross-category
-    boost; the boost is folded into `final_score` only."""
+    ``scored_signals`` preserves input order. Per-signal contribution is
+    post-attenuation and post-cap, but excludes the cross-category boost
+    and infrastructure dampener — those fold into ``final_score`` only."""
 
     final_score: float
     active_categories: frozenset[SignalCategory]
@@ -60,13 +69,12 @@ class ScoringReport:
 
 
 def score_signals(signals: Sequence[Signal]) -> ScoringReport:
-    """Score a list of signals. Pure — does not mutate the inputs.
+    """Score a list of signals. Pure.
 
-    Per-category: signals are sorted by base contribution (severity points ×
-    confidence) descending, then attenuated by position, then the category
-    total is capped at CATEGORY_CAP (scaling members proportionally).
-    Per-run: the final score is the sum of category totals multiplied by the
-    cross-category boost, clamped to [0, 100]."""
+    Per-category: sort by base contribution (severity × confidence) desc,
+    attenuate by position, cap at CATEGORY_CAP. Per-run: sum, apply cross-
+    category boost and (if applicable) infrastructure dampener, clamp to
+    [0, 100]."""
     contributions = _per_signal_contributions(signals)
     category_totals = _category_totals(signals, contributions)
 
@@ -74,7 +82,9 @@ def score_signals(signals: Sequence[Signal]) -> ScoringReport:
     active_categories = frozenset(
         category for category, total in category_totals.items() if total > 0
     )
-    multiplier = 1.0 + CROSS_CATEGORY_BOOST * max(0, len(active_categories) - 1)
+    multiplier = (
+        1.0 + CROSS_CATEGORY_BOOST * max(0, len(active_categories) - 1)
+    ) * _infrastructure_only_factor(category_totals, active_categories)
     final_score = max(0.0, min(raw_total * multiplier, 100.0))
 
     scored_signals = tuple(
@@ -98,11 +108,10 @@ def classify_verdict(score_value: float) -> Verdict:
 
 
 def _per_signal_contributions(signals: Sequence[Signal]) -> dict[int, float]:
-    """Compute each signal's contribution, keyed by its index in the input.
+    """Per-signal contribution keyed by input index.
 
-    Within each category: sort by base contribution descending, attenuate by
-    position, then scale all members so the category total does not exceed
-    CATEGORY_CAP."""
+    Within a category: sort desc, attenuate by position, scale members down
+    so the category total stays within CATEGORY_CAP."""
     indexed_by_category: dict[SignalCategory, list[tuple[int, Signal]]] = defaultdict(list)
     for index, signal in enumerate(signals):
         indexed_by_category[signal.category].append((index, signal))
@@ -135,6 +144,20 @@ def _category_totals(
     for index, signal in enumerate(signals):
         totals[signal.category] += contributions[index]
     return totals
+
+
+def _infrastructure_only_factor(
+    category_totals: dict[SignalCategory, float],
+    active_categories: frozenset[SignalCategory],
+) -> float:
+    if len(active_categories) < 2:
+        return 1.0
+    if not active_categories.issubset(_INFRASTRUCTURE_CATEGORIES):
+        return 1.0
+    decisive = SEVERITY_POINTS[SignalSeverity.CRITICAL]
+    if any(total >= decisive for total in category_totals.values()):
+        return 1.0
+    return INFRASTRUCTURE_ONLY_DAMPENER
 
 
 def _base_points(signal: Signal) -> float:
