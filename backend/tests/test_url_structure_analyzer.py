@@ -99,6 +99,55 @@ class TestIpInUrl:
 
 
 # ---------------------------------------------------------------------------
+# URL-3: dangerous URI scheme in href (data:, javascript:, file:, vbscript:)
+# ---------------------------------------------------------------------------
+
+
+class TestDangerousUriScheme:
+    @pytest.mark.parametrize(
+        ("html", "should_fire"),
+        [
+            ('<a href="data:text/html;base64,PGh0bWw+">Report</a>',  True),
+            ('<a href="javascript:alert(1)">Click</a>',              True),
+            ('<a href="file:///etc/passwd">Doc</a>',                 True),
+            ('<a href="vbscript:msgbox(1)">Run</a>',                 True),
+            ('<a href="DATA:text/html;base64,PGh0bWw+">X</a>',       True),
+            ('<a href="https://example.com/page">Page</a>',          False),
+            ('<a href="mailto:admin@example.com">Email</a>',         False),
+            ('<a href="tel:+15551234567">Call</a>',                  False),
+            ('<a href="/relative/path">Local</a>',                   False),
+        ],
+        ids=[
+            "data_uri_fires",
+            "javascript_fires",
+            "file_fires",
+            "vbscript_fires",
+            "case_insensitive_fires",
+            "https_does_not_fire",
+            "mailto_does_not_fire",
+            "tel_does_not_fire",
+            "relative_path_does_not_fire",
+        ],
+    )
+    def test_scheme_detection(
+        self,
+        analyzer: UrlStructureAnalyzer,
+        html: str,
+        should_fire: bool,
+    ):
+        output = analyzer.analyze(_make_email(body_html=html))
+        fired = any(s.id == "dangerous_uri_scheme" for s in output.signals)
+        assert fired is should_fire
+
+    def test_severity_and_confidence(self, analyzer: UrlStructureAnalyzer):
+        html = '<a href="data:text/html;base64,PGh0bWw+">Report</a>'
+        output = analyzer.analyze(_make_email(body_html=html))
+        signal = next(s for s in output.signals if s.id == "dangerous_uri_scheme")
+        assert signal.severity == SignalSeverity.CRITICAL
+        assert signal.confidence == 1.0
+
+
+# ---------------------------------------------------------------------------
 # Text-only URL extraction
 # ---------------------------------------------------------------------------
 

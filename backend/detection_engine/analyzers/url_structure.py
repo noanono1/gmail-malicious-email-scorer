@@ -13,6 +13,15 @@ from detection_engine.domain.signals import AnalysisOutput, Signal
 
 _BARE_URL_PATTERN = re.compile(r"https?://[^\s<>\"']+")
 
+# Schemes with no legitimate place in an email link: each one either embeds
+# executable content (javascript, vbscript), embeds an entire payload page
+# in the href itself (data), or escapes to local resources (file). Mail
+# clients block or strip them — when one survives in an inbound message it
+# reads as evasion intent rather than a normal link.
+_DANGEROUS_URI_SCHEMES: frozenset[str] = frozenset({
+    "data", "javascript", "vbscript", "file",
+})
+
 
 class _LinkExtractor(HTMLParser):
 
@@ -80,6 +89,7 @@ class UrlStructureAnalyzer(BaseAnalyzer):
             signal
             for signal in (
                 self._href_display_mismatch_signal(html_links),
+                self._dangerous_uri_scheme_signal(html_links),
                 self._ip_literal_host_signal(all_links),
             )
             if signal is not None
@@ -126,6 +136,23 @@ class UrlStructureAnalyzer(BaseAnalyzer):
             severity=SignalSeverity.CRITICAL,
             confidence=1.0,
             summary=f"Link text mismatches href: {'; '.join(mismatches[:3])}",
+        )
+
+    def _dangerous_uri_scheme_signal(
+        self, html_links: list[tuple[str, str]]
+    ) -> Signal | None:
+        flagged = [
+            href for href, _ in html_links
+            if urlparse(href).scheme.lower() in _DANGEROUS_URI_SCHEMES
+        ]
+        if not flagged:
+            return None
+        return Signal(
+            id="dangerous_uri_scheme",
+            category=SignalCategory.URL_STRUCTURE,
+            severity=SignalSeverity.CRITICAL,
+            confidence=1.0,
+            summary=f"Link uses non-standard URI scheme: {flagged[0][:80]}",
         )
 
     def _ip_literal_host_signal(
