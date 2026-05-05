@@ -17,6 +17,10 @@ def _contains_images(email: EmailData) -> bool:
     return any(a.mime_type.startswith("image/") for a in email.attachments)
 
 
+def _has_html_body(email: EmailData) -> bool:
+    return bool(email.body_html)
+
+
 # ── Structural blind spots ───────────────────────────────────────────
 # Engine evaluates these generically against every email.
 # To add a new structural blind spot, add one entry here — no engine changes needed.
@@ -25,19 +29,19 @@ STRUCTURAL: tuple[BlindSpot, ...] = (
     BlindSpot(
         area=BlindSpotArea.THREAD_HISTORY,
         reason="Single-email analysis only",
-        risk_note="Thread context may reveal social engineering patterns",
+        risk_note="Only this email was analyzed — surrounding thread context was not considered.",
     ),
     BlindSpot(
         area=BlindSpotArea.EMBEDDED_IMAGE,
         reason="Embedded images not analyzed",
-        risk_note="Images may contain text, QR codes, or visual phishing undetectable by text analysis",
+        risk_note="Image contents were not extracted — any text or QR codes inside images were not read.",
         applies=_contains_images,
     ),
     BlindSpot(
-        area=BlindSpotArea.QR_CODE,
-        reason="QR code detection not available",
-        risk_note="QR codes in images can encode phishing URLs — cannot be inspected without image processing",
-        applies=_contains_images,
+        area=BlindSpotArea.HTML_RENDERING,
+        reason="HTML body not rendered — text extracted from raw markup",
+        risk_note="The message was not rendered as a browser would display it, so CSS- or script-driven content was not evaluated.",
+        applies=_has_html_body,
     ),
 )
 
@@ -48,7 +52,7 @@ STRUCTURAL: tuple[BlindSpot, ...] = (
 AUTHENTICATION_HEADERS_MISSING = BlindSpot(
     area=BlindSpotArea.AUTHENTICATION_HEADERS,
     reason="No Authentication-Results header present",
-    risk_note="Email authentication status unknown — SPF, DKIM, and DMARC could not be evaluated",
+    risk_note="SPF, DKIM, and DMARC were not evaluated for this email.",
 )
 
 _AUTHENTICATION_UNENFORCEABLE_RISK_NOTES: dict[tuple[str, str], str] = {
@@ -71,13 +75,13 @@ def authentication_unenforceable(method: str, result: str) -> BlindSpot:
 ATTACHMENT_CONTENT = BlindSpot(
     area=BlindSpotArea.ATTACHMENT_CONTENT,
     reason="Attachment content not inspected — metadata-only analysis",
-    risk_note="File content could contain malicious code undetectable by extension checks",
+    risk_note="Only attachment metadata (name, size, type) was checked — file contents were not opened or scanned.",
 )
 
 URL_DESTINATION = BlindSpot(
     area=BlindSpotArea.URL_DESTINATION,
     reason="URLs found but not followed — cannot verify destination content",
-    risk_note="A clean-looking domain could redirect to a phishing page",
+    risk_note="URLs were detected, but destination pages were not fetched or verified.",
 )
 
 SENDER_ADDRESS_UNPARSEABLE = BlindSpot(
@@ -88,7 +92,6 @@ SENDER_ADDRESS_UNPARSEABLE = BlindSpot(
         "reply-to and return-path mismatch) were skipped"
     ),
 )
-
 
 LANGUAGE_ASSESSMENT_UNAVAILABLE = BlindSpot(
     area=BlindSpotArea.LANGUAGE_ASSESSMENT,

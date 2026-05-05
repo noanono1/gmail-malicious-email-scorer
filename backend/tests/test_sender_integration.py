@@ -22,7 +22,7 @@ from tests.email_fixtures import (
 
 def _engine() -> DetectionEngine:
     return DetectionEngine(
-        analyzers=[AuthenticationAnalyzer(), SenderAnalyzer()], intel_sources=[]
+        analyzers=[AuthenticationAnalyzer(), SenderAnalyzer()],
     )
 
 

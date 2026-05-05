@@ -1,5 +1,4 @@
-"""Unit tests for SenderAnalyzer — cousin domain, display name impersonation,
-freemail, reply-to, return-path."""
+"""Unit tests for SenderAnalyzer — cousin domain, reply-to, return-path."""
 
 from __future__ import annotations
 
@@ -7,7 +6,6 @@ import pytest
 
 from detection_engine.analyzers.sender import (
     SenderAnalyzer,
-    _claimed_identity_tokens,
     _hyphenated_domain_segments,
 )
 from detection_engine.domain.email import EmailData, EmailHeaders
@@ -121,158 +119,6 @@ class TestCousinDomain:
         email = _make_email(sender_address="user@paypa1.com")
         output = analyzer.analyze(email)
         assert len([s for s in output.signals if s.id == "cousin_domain"]) == 1
-
-
-# ---------------------------------------------------------------------------
-# SENDER-5: Display name impersonation (display name claims a brand the
-# domain doesn't own)
-# ---------------------------------------------------------------------------
-
-
-class TestDisplayNameImpersonation:
-    def test_brand_name_from_unrelated_domain(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="user@random.com",
-            sender_display_name="PayPal Security",
-        )
-        output = analyzer.analyze(email)
-        imp = [s for s in output.signals if s.id == "display_name_impersonation"]
-        assert len(imp) == 1
-        assert imp[0].severity == SignalSeverity.HIGH
-        assert "paypal" in imp[0].summary
-
-    def test_brand_name_from_freemail(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="user@gmail.com",
-            sender_display_name="Microsoft Support",
-        )
-        output = analyzer.analyze(email)
-        imp = [s for s in output.signals if s.id == "display_name_impersonation"]
-        assert len(imp) == 1
-        assert "microsoft" in imp[0].summary
-
-    def test_brand_alone_sufficient(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="user@random.com",
-            sender_display_name="PayPal",
-        )
-        output = analyzer.analyze(email)
-        imp = [s for s in output.signals if s.id == "display_name_impersonation"]
-        assert len(imp) == 1
-
-    def test_legitimate_domain_not_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="user@paypal.com",
-            sender_display_name="PayPal Security",
-        )
-        output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "display_name_impersonation"]
-
-    def test_defers_to_cousin_domain(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="user@paypa1.com",
-            sender_display_name="PayPal Security",
-        )
-        output = analyzer.analyze(email)
-        assert [s for s in output.signals if s.id == "cousin_domain"]
-        assert not [s for s in output.signals if s.id == "display_name_impersonation"]
-
-    def test_no_display_name_no_signal(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender_address="user@random.com")
-        output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "display_name_impersonation"]
-
-    def test_generic_display_name_no_signal(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="user@random.com",
-            sender_display_name="IT Support",
-        )
-        output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "display_name_impersonation"]
-
-    def test_personal_name_no_signal(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="alice@company.com",
-            sender_display_name="Alice Johnson",
-        )
-        output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "display_name_impersonation"]
-
-    def test_subdomain_of_brand_not_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="user@mail.paypal.com",
-            sender_display_name="PayPal",
-        )
-        output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "display_name_impersonation"]
-
-    def test_regional_brand_domain_not_flagged(self, analyzer: SenderAnalyzer):
-        """Display name 'Amazon' from amazon.in should not flag impersonation
-        even though amazon.in is not in the enumerated brand TLD list."""
-        email = _make_email(
-            sender_address="user@amazon.in",
-            sender_display_name="Amazon Customer Service",
-        )
-        output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "display_name_impersonation"]
-
-    def test_multiple_brand_tokens_one_matches_domain(self, analyzer: SenderAnalyzer):
-        """'Microsoft Apple' from apple.com must NOT flag impersonation of
-        Microsoft — the domain matches one of the claimed brands."""
-        email = _make_email(
-            sender_address="user@apple.com",
-            sender_display_name="Microsoft Apple",
-        )
-        output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "display_name_impersonation"]
-
-    def test_multiple_brand_tokens_none_matches_domain(self, analyzer: SenderAnalyzer):
-        """'Microsoft Apple' from random.com flags impersonation."""
-        email = _make_email(
-            sender_address="user@random.com",
-            sender_display_name="Microsoft Apple",
-        )
-        output = analyzer.analyze(email)
-        imp = [s for s in output.signals if s.id == "display_name_impersonation"]
-        assert len(imp) == 1
-
-
-# ---------------------------------------------------------------------------
-# SENDER-2: Freemail with organizational display name
-# ---------------------------------------------------------------------------
-
-
-class TestFreemailOrgName:
-    def test_freemail_with_org_keyword(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="fake@gmail.com",
-            sender_display_name="PayPal Security",
-        )
-        output = analyzer.analyze(email)
-        freemail = [s for s in output.signals if s.id == "freemail_org_name"]
-        assert len(freemail) == 1
-        assert freemail[0].severity == SignalSeverity.MEDIUM
-
-    def test_freemail_without_display_name(self, analyzer: SenderAnalyzer):
-        email = _make_email(sender_address="user@gmail.com")
-        output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "freemail_org_name"]
-
-    def test_freemail_with_personal_name(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="john@gmail.com",
-            sender_display_name="John Smith",
-        )
-        output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "freemail_org_name"]
-
-    def test_non_freemail_with_org_name(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="user@company.com",
-            sender_display_name="IT Security",
-        )
-        output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "freemail_org_name"]
 
 
 # ---------------------------------------------------------------------------
@@ -478,26 +324,10 @@ class TestUnparseableSender:
 
 
 # ---------------------------------------------------------------------------
-# Sender-specific helper tests (display-name parsing + domain segmentation).
+# Sender-specific helper tests (domain segmentation).
 # Generic typosquat and domain utilities are covered in
 # tests/test_typosquat.py and tests/test_domains.py.
 # ---------------------------------------------------------------------------
-
-
-class TestClaimedIdentityTokens:
-    def test_filters_generic_words(self):
-        assert _claimed_identity_tokens("IT Security Support") == []
-
-    def test_keeps_brand(self):
-        assert _claimed_identity_tokens("PayPal Security") == ["paypal"]
-
-    def test_keeps_multiple_identity_tokens(self):
-        tokens = _claimed_identity_tokens("Amazon Prime Service")
-        assert "amazon" in tokens
-        assert "prime" in tokens
-
-    def test_short_tokens_filtered(self):
-        assert _claimed_identity_tokens("AT T") == []
 
 
 class TestHyphenatedDomainSegments:

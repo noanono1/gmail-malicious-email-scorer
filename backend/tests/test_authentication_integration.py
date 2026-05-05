@@ -20,7 +20,7 @@ from tests.email_fixtures import (
 
 
 def _engine() -> DetectionEngine:
-    return DetectionEngine(analyzers=[AuthenticationAnalyzer()], intel_sources=[])
+    return DetectionEngine(analyzers=[AuthenticationAnalyzer()])
 
 
 class TestMassPhishingScoring:
