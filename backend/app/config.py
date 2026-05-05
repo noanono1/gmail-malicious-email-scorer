@@ -27,3 +27,9 @@ LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
 # Per-field Pydantic limits still apply on top and are the real correctness
 # gate; this cap is a memory-blowup guard. Default: 1 MiB.
 MAX_REQUEST_BYTES: int = _env_int("MAX_REQUEST_BYTES", default=1_048_576)
+
+# Per-IP fixed-window rate limit on /analyze. Defaults to 60 requests per
+# 60 seconds — comfortable headroom for the Gmail add-on (one call per
+# opened email) while bounding compute if a client misbehaves.
+RATE_LIMIT_PER_WINDOW: int = _env_int("RATE_LIMIT_PER_WINDOW", default=60)
+RATE_LIMIT_WINDOW_SECONDS: int = _env_int("RATE_LIMIT_WINDOW_SECONDS", default=60)

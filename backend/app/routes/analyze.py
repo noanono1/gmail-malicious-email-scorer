@@ -6,12 +6,18 @@ from fastapi.responses import JSONResponse
 
 from app.auth import verify_hmac
 from app.dependencies import DetectionEngineDependency
+from app.rate_limit import enforce_rate_limit
 from app.schemas import AnalyzeRequest, AnalyzeResponse
 from detection_engine import AnalyzerCrashed
 
 logger = structlog.get_logger()
 
-router = APIRouter(tags=["analysis"], dependencies=[Depends(verify_hmac)])
+# Rate limit runs before HMAC so blocked clients short-circuit before the
+# SHA256 verification reads and hashes the request body.
+router = APIRouter(
+    tags=["analysis"],
+    dependencies=[Depends(enforce_rate_limit), Depends(verify_hmac)],
+)
 
 
 @router.post("/analyze", response_model=AnalyzeResponse)
