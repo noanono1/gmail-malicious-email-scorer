@@ -331,3 +331,36 @@ def test_html_only_body_is_passed_to_slm_as_text() -> None:
     body_passed = slm.calls[0][1]
     assert "<p>" not in body_passed
     assert "Hello" in body_passed and "world" in body_passed
+
+
+def test_html_script_and_style_payloads_are_dropped() -> None:
+    """A naive `<[^>]+>` strip would only delete the tags and leave the
+    JS/CSS body in the SLM input — biasing the assessment and consuming
+    the body-char budget. Verify both payload bodies are gone."""
+    slm = _FakeSlm(assessment=_assessment())
+    LanguageAssessmentAnalyzer(slm).analyze(
+        _make_email(body_html=(
+            "<style>.x{color:red}</style>"
+            "<p>Visible body</p>"
+            "<script>alert('phish')</script>"
+        )),
+    )
+
+    body_passed = slm.calls[0][1]
+    assert "alert" not in body_passed
+    assert "color:red" not in body_passed
+    assert "Visible body" in body_passed
+
+
+def test_html_entities_are_decoded_before_slm_sees_body() -> None:
+    """Quote-grounding compares model output against the body the SLM
+    saw. If entities are not decoded, the model's natural quote ("don't
+    miss") never grounds against the source ("don&#39;t miss")."""
+    slm = _FakeSlm(assessment=_assessment())
+    LanguageAssessmentAnalyzer(slm).analyze(
+        _make_email(body_html="<p>don&#39;t miss our &amp; sale</p>"),
+    )
+
+    body_passed = slm.calls[0][1]
+    assert "&#39;" not in body_passed and "&amp;" not in body_passed
+    assert "don't miss" in body_passed and "& sale" in body_passed

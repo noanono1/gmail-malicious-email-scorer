@@ -20,6 +20,7 @@ from detection_engine.domain.language_assessment import (
     RequestedAction,
 )
 from infrastructure.llm._prompt import (
+    MAX_BODY_CHARS,
     build_prompt,
     normalize_for_grounding as _normalize_for_grounding,
     parse_strict as _parse_strict,
@@ -69,6 +70,57 @@ def test_literal_close_tag_in_body_does_not_match_real_delimiter() -> None:
 
     assert f"</email-{token}>" != "</email>"
     assert "abc</email>xyz" in prompt  # body preserved verbatim
+
+
+# ---------------------------------------------------------------------------
+# Body truncation — head + tail sampling defeats front-padding evasion
+# ---------------------------------------------------------------------------
+
+
+def test_short_body_is_not_truncated() -> None:
+    body = "Hello there"
+    assert build_prompt("subj", body).user_message.count(body) == 1
+
+
+def test_oversized_body_preserves_both_ends() -> None:
+    """Head-only truncation lets an attacker pad innocuous text at the
+    front so the credential-harvesting CTA at the bottom never reaches
+    the model. Head + tail sampling preserves the closing ask."""
+    head_marker = "OPENING_FRAMING_TEXT"
+    tail_marker = "REPLY_WITH_YOUR_PASSWORD"
+    padding = "x" * (MAX_BODY_CHARS * 2)
+    body = f"{head_marker} {padding} {tail_marker}"
+
+    prompt = build_prompt("subj", body).user_message
+
+    assert head_marker in prompt
+    assert tail_marker in prompt
+    # Visible elision marker so the model knows text was dropped rather
+    # than reading head+tail as one contiguous passage.
+    assert "[…]" in prompt
+
+
+def test_truncated_tail_quote_still_grounds() -> None:
+    """If validate_coherence and build_prompt disagreed on what was
+    truncated, a perfectly legitimate tail-region quote would be falsely
+    rejected as ungrounded. They share the helper, so it grounds."""
+    from detection_engine.domain.language_assessment import (
+        LanguageAssessment,
+        ManipulationTactic,
+        PressureLevel,
+        RequestedAction,
+    )
+
+    tail_quote = "wire $5,000 today to avoid arrest"
+    body = ("filler " * (MAX_BODY_CHARS // 7)) + tail_quote
+    assessment = LanguageAssessment(
+        requested_action=RequestedAction.PROVIDE_PAYMENT,
+        pressure_level=PressureLevel.SEVERE,
+        manipulation_tactics=[ManipulationTactic.FEAR_OF_LOSS],
+        evidence_quotes=[tail_quote],
+        confidence=0.9,
+    )
+    assert _validate_coherence(assessment, "subj", body) is not None
 
 
 # ---------------------------------------------------------------------------

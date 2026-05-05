@@ -1,28 +1,31 @@
-# Static Analysis Detection Policy
+# Detection Policy
 
 ## Scope
 
-This system detects **statically-observable indicators of malicious email** — no sandboxing, no external API calls, no ML models. Every indicator is extracted from the email as received: headers, sender address, body text/HTML, and attachment metadata.
+The engine is split along a deliberate seam:
 
-The indicator set covers mass phishing as the primary use case, with meaningful overlap into credential harvesting, malware delivery via attachments, and basic impersonation patterns (including some BEC and spear-phishing variants). Threats that require capabilities beyond static analysis — sandbox execution, user profiling, organizational context, threat-intel lookups — are explicitly out of scope and documented in "Deferred Indicators." The architecture supports adding them later via the `ThreatIntelSource` ABC.
+1. **Deterministic analyzers** (authentication, sender, URL, attachment, body HTML structure) — every indicator is extracted from the email as received. Same input, same output, every time. Verbatim evidence in every signal. No outbound network access.
+2. **Language Assessment analyzer** — one analyzer, isolated from the rest, that asks a **local** SLM (Ollama, no external API) to decompose the body into a closed-set schema. Severity is capped at HIGH so a probabilistic verdict can amplify but never solely drive the engine to MALICIOUS.
 
-### Where this system is strongest
+The indicator set covers mass phishing as the primary use case, with meaningful overlap into credential harvesting, malware delivery via attachments, and basic impersonation patterns (including some BEC and spear-phishing variants). When the Language Assessment analyzer is enabled, paraphrased social-engineering language that keyword rules historically over- or under-flagged is also covered. Threats that require capabilities beyond these two seams — sandbox execution, user profiling, organizational context, threat-intel lookups — are explicitly out of scope and documented in "Deferred Indicators."
 
-Email threats span a wide spectrum: mass phishing, spear phishing, BEC (business email compromise), malware delivery, credential harvesting, and spam/scam. The indicators here are most effective against threats that share three properties:
+### Why this split
 
-- **Statically detectable** — they leave repeatable artifacts (spoofed domains, deceptive links, dangerous attachments, urgency language) rather than relying purely on personalized social engineering.
-- **High volume** — mass phishing dominates real-world phishing traffic, and credential-harvesting and malware-delivery patterns overlap heavily with it. Catching these addresses most of what users actually receive.
-- **Bounded by the artifact** — what's in the email is sufficient to decide. Threats that need additional context (is this user a finance approver? does this attachment execute? has this domain been seen before?) are deliberately deferred, since static analysis cannot answer them honestly.
+Email threats split cleanly into two kinds of evidence: **artifacts** (headers, addresses, links, files) and **language** (urgency, manipulation, requested action). Artifacts have repeatable structure — a `dmarc=fail` is unambiguous, a `<form>` in the body is or isn't there, a `.exe` attachment is one rule. Language doesn't. Keyword rules over-flag legitimate transactional copy that shares vocabulary with phishing ("verify your identity") and miss novel phrasings of the same manipulation.
 
-### Why static analysis only
+So we use rules where they're strong and isolate language understanding into one constrained extractor where they're brittle. The Language Assessment analyzer is grammar-constrained at decode time (Ollama `format` against a Pydantic schema), validates that any non-default finding cites a verbatim quote from the email, and on any failure (transport, parse, ungrounded quote) returns a blind spot rather than a guess.
 
-Static analysis means we examine the email artifact as-is, without network calls, URL resolution, or file execution. This gives us:
+### Why the deterministic analyzers stay offline
 
-- **No external dependencies** — the engine runs anywhere, with no API keys, rate limits, or availability concerns.
-- **Deterministic results** — same email always produces the same verdict, which makes testing and debugging straightforward.
+They run on the email artifact as-is, without URL resolution, WHOIS, or sandbox execution. This gives us:
+
+- **No external dependencies** — the deterministic analyzers run anywhere, with no API keys, rate limits, or availability concerns.
+- **Deterministic results** — same email always produces the same deterministic-engine verdict, which makes testing and debugging straightforward.
 - **Fast execution** — no I/O waits, suitable for real-time Gmail Add-on UX.
 
-The cost: we cannot resolve shortened URLs, check domain age via WHOIS, scan attachments in a sandbox, or query threat intelligence feeds. The architecture supports these via the `ThreatIntelSource` ABC, but they are out of scope for the initial implementation.
+The Language Assessment analyzer breaks none of these guarantees externally — under the default `LANGUAGE_PROVIDER=local` the SLM is local and content never leaves the host; decoding is grammar-constrained against the `LanguageAssessment` schema, and the analyzer reports a blind spot when the configured provider is unreachable rather than degrading silently. The optional `LANGUAGE_PROVIDER=openai` path sends content to OpenAI's API; that tradeoff is opt-in, never the default.
+
+The cost: we cannot resolve shortened URLs, check domain age via WHOIS, scan attachments in a sandbox, or query threat intelligence feeds. These would all require external network lookups; they are out of scope for the initial implementation. See `docs/ROADMAP.md` Tier 4 for the planned shape if added later.
 
 ---
 
@@ -87,14 +90,12 @@ These indicators examine who is sending and whether the identity is deceptive, i
 | ID | Indicator | What it detects | Severity | Signal strength | FP risk | Implementation notes |
 |---|---|---|---|---|---|---|
 | **SENDER-1** | Cousin/lookalike domain | `paypa1.com`, `arnazon.com`, `docs-google-verify.com` — sender domain visually similar to a known brand | CRITICAL | Very strong — proves impersonation intent | Very low | Split the registered domain into hyphen-separated segments and compare each against a curated brand list. Normalize visually similar substitutions before comparison: single-char (`1`↔`l`, `0`↔`o`, `5`↔`s`) and multi-char (`rn`↔`m`, `vv`↔`w`, `cl`↔`d`). Threshold scales with brand length — short brands (<5 chars) require an exact match, longer brands tolerate 1–2 edits. Domain-driven only; does not depend on display name. Legitimate regional variants (`amazon.in`, `paypal.fr`, `ebay.co.uk`) are suppressed via a trusted-public-suffix allowlist so they do not become CRITICAL false positives — squatters on fancy gTLDs (`paypal.xyz`) still fire |
-| **SENDER-2** | Free provider with org display name | "Bank of America" \<boa.security@gmail.com\> | MEDIUM | Moderate | Moderate — individuals legitimately use free email with business names | Check if From domain is a known free provider (gmail, yahoo, outlook, protonmail, …) while display name contains organizational keywords |
 | **SENDER-3** | From ≠ Reply-To mismatch | Response directed to a different address | HIGH | Strong | Moderate — legit mailing lists sometimes use different Reply-To | Flag when Reply-To domain differs from From domain. Suppressed when (a) both share the same registered organization (e.g. `support@mail.acme.com` ↔ `acme.com`), (b) the Reply-To is a known ESP, or (c) the From is a freemail provider — personal mail routinely sets a different reply address and flagging it would be too noisy |
 | **SENDER-4** | Return-Path ≠ From domain | Bounce address points to a different domain than the sender | MEDIUM | Moderate | Moderate — ESPs (SendGrid, SES) use their own Return-Path | Flag when Return-Path domain differs from From domain. Suppressed when both share the same registered organization or when Return-Path is a known ESP |
-| **SENDER-5** | Display name impersonation | "PayPal Security" \<user@random.com\> — display name claims a brand the domain doesn't own | HIGH | Strong — display name is the first thing users see | Low | Extract identity tokens from the display name (filtering out role/title noise like "Security", "Support", "Team"), then collect every token that matches the curated brand list. Emit a signal only if **none** of the claimed brands resolves to the sender's registered domain — so "Microsoft Apple" sent from `apple.com` is treated as legitimate Apple mail, not Microsoft impersonation. The same regional-TLD allowlist used by SENDER-1 applies here. Defers to SENDER-1: if a cousin domain is already detected, this signal is suppressed to avoid double-counting one impersonation as two |
 
 **Why cousin domain is CRITICAL**: Unlike authentication failures (which could be misconfiguration), a cousin domain like `paypa1-support.com` is almost never accidental. It represents deliberate, premeditated impersonation — the attacker registered lookalike infrastructure. A single cousin domain detection should push the score into LIKELY_MALICIOUS territory on its own (CRITICAL = 35 base points, threshold = 35).
 
-**Why display name impersonation is HIGH, not CRITICAL**: Setting a display name to "PayPal" costs nothing — any mail client can do it. It's strong evidence of deception but weaker than cousin domain infrastructure. When both are present, only the cousin domain fires (the stronger signal subsumes the weaker one).
+**Display-name impersonation is intentionally not a signal here**: An earlier draft included a brand-claim check on the From display name. It was removed because (a) it overlapped almost entirely with SENDER-1 — when the cousin domain fired, the display-name finding was suppressed to avoid double-counting, leaving its unique coverage limited to brand impersonation from freemail or unrelated domains; (b) coverage was bounded by a small static brand list that does not address the long tail of impersonated brands; (c) the more impactful display-name attack is personal-name impersonation in BEC (e.g. "John Smith, CEO" from a freemail account), which requires organizational context this static analyzer does not have. The attack surface is acknowledged as a deferred indicator rather than partially covered.
 
 ### URL_STRUCTURE category
 
@@ -111,15 +112,30 @@ These indicators analyze links in the email body without following them.
 
 ### BODY_CONTENT category
 
-These indicators analyze the textual content for manipulation patterns.
+These indicators are **structural** — they detect attacker techniques observable in the body's HTML or DOM, not in its language. Linguistic body content (urgency, credential solicitation, paraphrased manipulation) is owned by the Language Assessment analyzer below.
 
 | ID | Indicator | What it detects | Severity | Signal strength | FP risk | Implementation notes |
 |---|---|---|---|---|---|---|
-| **CONTENT-1** | Urgency/threat language | "suspended within 24 hours", "immediate action required" | MEDIUM | Moderate — pressure tactics are a phishing hallmark | High — legit services also send deadline notices | Keyword/phrase pattern matching against a curated urgency dictionary. MEDIUM severity specifically because of FP risk — this should support a verdict, not drive it |
-| **CONTENT-2** | Sensitive data request | "verify your password", "confirm SSN", "update payment" | HIGH | Strong — legit services explicitly state they never ask for this via email | Low | Keyword matching for credential/financial/identity terms in request context |
 | **CONTENT-3** | HTML form in email body | Inline `<form>` with `<input>` fields | CRITICAL | Very strong — almost never appears in legitimate email | Very low | Search HTML body for `<form>` tags containing input elements |
 
-**Why urgency is only MEDIUM**: Urgency language has the highest false-positive risk of any included indicator. Legitimate services routinely send "your trial expires in 3 days" or "payment due by Friday". However, urgency is a **supporting signal** — it almost always co-occurs with stronger indicators in actual phishing. The scoring algorithm handles this correctly: MEDIUM = 12 base points (never enough to cross SUSPICIOUS alone at 15), but it amplifies a verdict when combined with auth failures or URL mismatches.
+**Why language indicators were removed from this category**: Earlier drafts defined CONTENT-1 (urgency keyword list) and CONTENT-2 (sensitive-data keyword list). They were removed in the move to a deterministic-rules + one-semantic-extractor architecture. Two reasons drove the removal:
+
+1. **Brittle in both directions.** Keyword rules over-flagged legitimate transactional copy that happens to share vocabulary with phishing ("verify your identity" appears in real bank password-reset flows) and under-flagged paraphrased variants the curated list didn't anticipate. False-positive risk on CONTENT-1 was already documented as "High" in the earlier table.
+2. **Double-counting with the language analyzer.** Once the Language Assessment analyzer captures the same intent (`pressure_level`, `requested_action == provide_secrets`) from a structured assessment with grounded evidence, keeping the keyword version produces two BODY_CONTENT signals from the same evidence — partially cushioned by within-category attenuation, but architecturally a duplicate path.
+
+The Language Assessment analyzer (next section) replaces both with a single signal grounded in a verbatim quote.
+
+### LANGUAGE category (semantic, body content)
+
+Language understanding is isolated into one analyzer, gated behind a port (`LlmService`) that any backend implementing `assess(subject, body) -> LanguageAssessment | None` could fulfill. Two providers are wired today: a local Ollama-served SLM (default) and the OpenAI Chat Completions API. Selection is via `LANGUAGE_PROVIDER` (`local` or `openai`); `local` is the default because it keeps email content on the host.
+
+| ID | Indicator | What it detects | Severity | Signal strength | FP risk | Implementation notes |
+|---|---|---|---|---|---|---|
+| **LANG-1** | Manipulative language (`manipulative_language`) | Combination of risky `requested_action` (`provide_secrets`, `provide_payment`, `login_or_verify_identity`, …), `pressure_level`, and itemized `manipulation_tactics` derived from a structured SLM assessment of the body | LOW–HIGH (capped at HIGH) | Moderate — depends on the combination of axes; isolated provide_secrets without pressure reaches MEDIUM, secrets + severe pressure + multiple tactics reaches HIGH | Low — defended by closed-set schema, grammar-constrained decoding (Ollama `format`), and verbatim evidence-quote grounding | One signal in the BODY_CONTENT category. Confidence floor (0.6) suppresses uncertain assessments. Severity ceiling is HIGH by design — a probabilistic verdict cannot single-handedly drive an email to MALICIOUS; CRITICAL stays reserved for findings provable from the artifact (cousin domain, HTML form, dangerous extension). On any failure (transport, schema, grounding) the analyzer emits a `language_assessment` blind spot rather than a guess |
+
+**Why HIGH ceiling**: Any language model — SLM or LLM — is probabilistic; even a well-grounded assessment can be wrong on adversarial input. Capping at HIGH means the analyzer can amplify a verdict already supported by deterministic findings (auth fail + cousin domain + manipulative language → MALICIOUS) without being able to drive an otherwise-clean email past LIKELY_MALICIOUS on its own.
+
+**Anti-injection and anti-hallucination defenses** (see `infrastructure/llm/_prompt.py` for the full list): per-request random delimiter, Unicode control/format hygiene, grammar-constrained decoding against the Pydantic schema, and rejection of any non-default finding whose evidence quotes don't appear verbatim in the (sanitized) source text. The grounding check is the load-bearing one — without it, the analyzer would surface fabricated quotes; with it, ungrounded responses degrade to a blind spot.
 
 ### ATTACHMENT category
 
@@ -153,13 +169,13 @@ These indicators were evaluated and intentionally excluded from the initial scop
 | Indicator | Why deferred | What would be needed |
 |---|---|---|
 | **Received chain analysis** | The Received header format is not standardized — each MTA writes it differently. Parsing is fragile and produces unreliable results. Effort-to-value ratio is poor | A robust multi-format parser with per-MTA heuristics |
-| **Domain age** | Requires WHOIS or RDAP lookup — an external network call that violates our static-analysis constraint | `ThreatIntelSource` implementation with WHOIS/RDAP client |
-| **URL destination check** | Requires HTTP requests to follow redirects — violates static-analysis constraint and introduces latency | `ThreatIntelSource` implementation with Safe Browsing API |
+| **Domain age** | Requires WHOIS or RDAP lookup — an external network call that violates our static-analysis constraint | A WHOIS/RDAP client behind a threat-intel port (see ROADMAP Tier 4) |
+| **URL destination check** | Requires HTTP requests to follow redirects — violates static-analysis constraint and introduces latency | A Safe Browsing client behind a threat-intel port (see ROADMAP Tier 4) |
 | **Obfuscated HTML** | CSS-hidden text (`font-size:0`, `color:white`, `display:none`), base64-encoded sections, `data:` URI inlining of phishing pages. Detecting these requires rendering or deep HTML analysis. Moderate effort for low commonality | HTML rendering engine or heuristic decoder |
-| **NLP tone analysis** | ML-based content classification. Entirely different system — requires training data, model serving, and introduces non-determinism | Trained classifier, inference infrastructure |
 | **QR code phishing** | Embedded QR codes pointing to malicious URLs. Requires image parsing — not available in static text analysis | Image processing library, QR decoder |
-| **Shortened URL detection** | Shorteners (bit.ly, t.co, tinyurl.com) hide the destination, but legitimate marketing, social media, and CRM tooling use them constantly. As a standalone signal the FP rate is too high to defend; the destination question it raises is already represented by the `URL_DESTINATION` blind spot, and is properly resolved by following the link in a sandbox or threat-intel service rather than by host-list matching | A `ThreatIntelSource` that resolves shorteners (or a Safe Browsing query on the resolved URL) |
+| **Shortened URL detection** | Shorteners (bit.ly, t.co, tinyurl.com) hide the destination, but legitimate marketing, social media, and CRM tooling use them constantly. As a standalone signal the FP rate is too high to defend; the destination question it raises is already represented by the `URL_DESTINATION` blind spot, and is properly resolved by following the link in a sandbox or threat-intel service rather than by host-list matching | A shortener-resolving client (or a Safe Browsing query on the resolved URL) behind a threat-intel port (see ROADMAP Tier 4) |
 | **Link volume / excessive URL count** | Counting unique link domains is metadata, not evidence. As an INFO-severity signal it contributed 0 points to the score while still appearing in the findings list — pure noise. If link volume ever becomes useful it will be as an input to a stronger composite signal, not as a finding on its own | A composite scoring rule that combines link volume with content or sender heuristics |
+| **Display-name impersonation** | A static brand-claim check on the From display name was prototyped and removed. Its unique coverage was narrow — when a cousin domain was present (the typical attack pattern) it was suppressed to avoid double-counting, leaving only the freemail/unrelated-domain case — and it was bounded by a small static brand list that does not reflect the long tail of impersonated brands. The higher-value display-name attack is personal-name impersonation in BEC ("John Smith, CEO" from a freemail account), which static analysis cannot resolve without organizational identity context | A directory of legitimate internal senders (or threat-intel feed of impersonated brands) cross-referenced against display-name claims |
 
 ---
 
@@ -181,7 +197,8 @@ The scoring algorithm (defined in `scoring.py`) enforces the relationships descr
 
 - **Within-category attenuation (÷1.6^k)**: Prevents correlated signals from stacking. Three AUTH failures ≈ 1.9× one failure, not 3×.
 - **Category cap (50 pts)**: No single category can dominate. Five auth failures cannot push past LIKELY_MALICIOUS without evidence from another category.
-- **Cross-category boost (+8% per extra category)**: Rewards convergent evidence. Auth failure + URL mismatch + urgency language = 3 categories = +16% boost.
+- **Cross-category boost (+10% per extra active category)**: Two categories → ×1.10, three → ×1.20, four → ×1.30. Reflects that convergent evidence across orthogonal categories is more diagnostic than depth in one.
+- **Infrastructure-only dampener (×0.78)**: Applied when ≥2 active categories are firing, *all* of them are AUTHENTICATION or SENDER_IDENTITY ("infrastructure looks unsettled" signals), and *no* category contributes a CRITICAL-strength score (≥35). This is the false-positive guard: SPF softfail + Reply-To mismatch alone is two HIGH-severity signals across two categories that would otherwise sum to LIKELY_MALICIOUS, but without any URL/body/attachment evidence the email has no concrete attack indicator — only "something looks off about the infrastructure". The dampener pulls it back to SUSPICIOUS. Decisive single signals (DMARC fail at CRITICAL, cousin domain at CRITICAL) disable the dampener — they are strong enough on their own to justify a LIKELY_MALICIOUS verdict.
 
 ### Verdict thresholds
 
@@ -191,10 +208,11 @@ The scoring algorithm (defined in `scoring.py`) enforces the relationships descr
 | 15–34 | SUSPICIOUS | Some indicators present — review recommended |
 | 35–64 | LIKELY_MALICIOUS | Strong evidence from one or more categories |
 | 65–100 | MALICIOUS | Convergent evidence across multiple categories |
+| n/a | INCONCLUSIVE | Score-independent. Emitted when zero signals fired but a primary inspection channel was unavailable (today: `LANGUAGE_ASSESSMENT` blind spot, i.e. the language model was unreachable). The body was never assessed, so the engine refuses to certify SAFE and surfaces a coverage gap instead. The numeric score is omitted in the UI for this verdict because there is nothing to score |
 
 ### Example: mass phishing email scoring path
 
-An email from `paypa1-support.com` with SPF/DKIM/DMARC fail, a deceptive URL, and urgency language:
+An email from `paypa1-support.com` with SPF/DKIM/DMARC fail, a deceptive URL, and (with the Language Assessment analyzer enabled) provide_secrets + severe pressure:
 
 ```
 AUTHENTICATION:
@@ -207,20 +225,55 @@ SENDER_IDENTITY:
   Cousin domain  → CRITICAL (35.0) ÷ 1.6^0 = 35.0
 
 URL_STRUCTURE:
-  IP in URL      → HIGH    (22.0) ÷ 1.6^0 = 22.0
+  Href ≠ display → CRITICAL (35.0) ÷ 1.6^0 = 35.0
 
-BODY_CONTENT:
-  Urgency        → MEDIUM  (12.0) ÷ 1.6^0 = 12.0
+BODY_CONTENT (language assessment):
+  manipulative_language → HIGH (22.0 × 0.95 conf) = 20.9
 
-Raw total = 50.0 + 35.0 + 22.0 + 12.0 = 119.0
-Active categories = 4 → boost = 1 + 0.08 × 3 = 1.24
-Final = 119.0 × 1.24 = 147.56 → clamped to 100.0
+Raw total = 50.0 + 35.0 + 35.0 + 20.9 = 140.9
+Active categories = 4 → cross-category boost ×1.30
+Dampener: not all categories are infrastructure → no dampener
+Final = 140.9 × 1.30 = 183.2 → clamped to 100.0
 Verdict = MALICIOUS ✓
 ```
 
+### Example: strong language body alone — language is a *helper*, not the decider
+
+A body that asks for the user's password under severe pressure, but with valid auth and a real-looking domain:
+
+```
+BODY_CONTENT (language assessment):
+  manipulative_language → HIGH (22.0 × 0.95 conf) = 20.9
+
+Raw total = 20.9
+1 active category → no cross-category boost
+Final = 20.9 → SUSPICIOUS
+```
+
+A flagrantly worded body alone is bounded at SUSPICIOUS — by design. The HIGH severity ceiling on probabilistic language assessments applies, and a single category produces no cross-category boost. Pair the same language with another finding (deceptive URL, sender mismatch, auth fail) and the cross-category boost lifts the score into LIKELY_MALICIOUS / MALICIOUS without raising any individual signal's severity.
+
+### Example: weak unrelated infrastructure signals — the false-positive guard
+
+A small-vendor email with `spf=softfail` and a Reply-To pointing to a different domain. Two HIGH-severity signals across two categories — but no concrete "what is this email trying to do" finding:
+
+```
+AUTHENTICATION:
+  SPF softfail   → HIGH (22.0 × 0.7 conf) = 15.4
+
+SENDER_IDENTITY:
+  Reply-To mismatch → HIGH (22.0 × 1.0 conf) = 22.0
+
+Raw total = 37.4
+2 active categories → cross-category boost ×1.10 → 41.14
+Both categories are infrastructure, no CRITICAL contribution → dampener ×0.78
+Final = 41.14 × 0.78 = 32.1 → SUSPICIOUS
+```
+
+Without the dampener this would land in LIKELY_MALICIOUS — but the email has no URL, body, or attachment evidence declaring an attack. SUSPICIOUS ("review this") is the calibrated verdict.
+
 ### Example: legitimate Amazon order
 
-An email from `amazon.com` with SPF/DKIM/DMARC pass, real URLs, no urgency:
+An email from `amazon.com` with SPF/DKIM/DMARC pass, real URLs, no manipulative language:
 
 ```
 No signals emitted → score = 0.0
@@ -229,19 +282,20 @@ Verdict = SAFE ✓
 
 ---
 
-## Blind Spots
+## Blind Spots (user-facing label: "Limitations")
 
-Every detection system has known gaps. Ours are documented as `BlindSpot` domain objects and reported alongside verdicts, so the user knows what the system *didn't* check.
+Every detection system has known gaps. Ours are modeled as `BlindSpot` domain objects and reported alongside verdicts, so the user sees the **scope of the check**, not just the verdict. The Gmail Add-on surfaces them under the heading **Limitations** — phrased as factual disclosures of what was not done, deliberately *not* as findings against the email.
 
-| Blind spot | When reported | Risk | Status |
+| Blind spot | When reported | What was not checked (user-facing copy) | Status |
 |---|---|---|---|
-| `ATTACHMENT_CONTENT` | Email has attachments | We check metadata (extension, MIME) but not file content — a .pdf could contain malicious JavaScript | Emitted by AttachmentAnalyzer |
-| `URL_DESTINATION` | Email has URLs | We check URL structure but don't follow links — a clean-looking domain could redirect to a phishing page | Emitted by UrlStructureAnalyzer |
-| `AUTHENTICATION_HEADERS` | Authentication-Results header absent, OR a method returned `none` (no policy published) / `temperror` (transient lookup failure) | We cannot evaluate that authentication mechanism — different from a `fail`, which means we *did* evaluate and it failed | Emitted by AuthenticationAnalyzer |
+| `ATTACHMENT_CONTENT` | Email has attachments | Only attachment metadata (name, size, type) was checked — file contents were not opened or scanned | Emitted by AttachmentAnalyzer |
+| `URL_DESTINATION` | Email has URLs | URLs were detected, but destination pages were not fetched or verified | Emitted by UrlStructureAnalyzer |
+| `AUTHENTICATION_HEADERS` | Authentication-Results header absent, OR a method returned `none` (no policy published) / `temperror` (transient lookup failure) | SPF, DKIM, and DMARC were not evaluated for this email — different from a `fail`, which means we *did* evaluate and it failed | Emitted by AuthenticationAnalyzer |
 | `SENDER_IDENTITY` | The From address could not be parsed (no `@`, empty domain, malformed) | All sender-identity checks (cousin domain, display-name impersonation, reply-to and return-path mismatch) were skipped. A verdict of SAFE on a malformed From should not be read as "the sender looks fine" | Emitted by SenderAnalyzer |
-| `THREAD_HISTORY` | Always | We analyze the single message, not the conversation thread — a reply to a legitimate thread is harder to identify as phishing | Emitted by engine |
-| `EMBEDDED_IMAGE` | Email has inline images or image attachments | Images could contain QR codes or text designed to bypass text-based analysis | Emitted by engine |
-| `QR_CODE` | Email has inline images or image attachments | QR codes in images can encode phishing URLs — undetectable without image processing | Emitted by engine |
-| `HTML_RENDERING` | Email has HTML body | We parse HTML structure but don't render it — CSS tricks could hide or show content selectively | Defined in enum, not yet emitted |
+| `THREAD_HISTORY` | Always | Only this email was analyzed — surrounding thread context was not considered | Emitted by engine |
+| `EMBEDDED_IMAGE` | Email has inline images or image attachments | Image contents were not extracted — any text or QR codes inside images were not read | Emitted by engine |
+| `QR_CODE` | (reserved) | QR codes inside images were not decoded — image processing is out of scope | Defined in the `BlindSpotArea` enum but not emitted yet — image-content inspection (OCR / QR decoding) is a future extension. The `EMBEDDED_IMAGE` blind spot above already covers the user-facing "we did not look inside images" message |
+| `HTML_RENDERING` | Email has HTML body | The message was not rendered as a browser would display it, so CSS- or script-driven content was not evaluated | Emitted by engine |
+| `LANGUAGE_ASSESSMENT` | Language Assessment analyzer is disabled, the local SLM is unreachable, or its response failed schema or evidence-grounding validation | Social-engineering language (paraphrased urgency, credential solicitation, authority impersonation, financial lure) was not assessed for this email | Emitted by LanguageAssessmentAnalyzer |
 
-Reporting blind spots is a deliberate design choice: a verdict of SAFE with three blind spots means something different than SAFE with zero. The consumer (Gmail Add-on UI) can display these to help the user make informed decisions.
+Reporting limitations is a deliberate design choice: a verdict of SAFE with three limitations means something different than SAFE with zero. Phrasing them as scope ("what was not done") rather than risk ("what could go wrong") keeps them honest without alarming the user about every email.

