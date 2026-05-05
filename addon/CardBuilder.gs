@@ -29,6 +29,24 @@ var CATEGORY_DISPLAY = [
 var SEVERITY_RANK = { info: 0, low: 1, medium: 2, high: 3, critical: 4 };
 
 /**
+ * Escapes a string for safe rendering inside Card UI text widgets.
+ * setText() on TextParagraph and DecoratedText interprets a small HTML
+ * subset (<b>, <font>, <a>, ...). Backend-supplied text that originates
+ * from email content (signal summaries with SLM evidence quotes, file
+ * names, URLs) must be escaped before it reaches setText so attacker-
+ * controlled angle brackets cannot distort the layout or smuggle markup.
+ */
+function htmlEscape(text) {
+  if (text === null || text === undefined) return "";
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
  * Builds the main analysis result card from the backend response.
  */
 function buildAnalysisCard(result, messageId) {
@@ -116,7 +134,7 @@ function buildSummarySection(explanation) {
   var section = CardService.newCardSection().setHeader("Summary");
 
   section.addWidget(
-    CardService.newTextParagraph().setText(explanation)
+    CardService.newTextParagraph().setText(htmlEscape(explanation))
   );
 
   return section;
@@ -200,9 +218,12 @@ function buildSignalWidget(signal) {
   var severityLabel = signal.severity.toUpperCase();
   var contribution = "+" + signal.score_contribution.toFixed(1) + " pts";
 
+  // signal.summary can include attacker-controlled fragments (SLM-quoted
+  // evidence from the email body, attachment filenames, URL strings) — escape
+  // before setText so angle brackets cannot reach the Card HTML interpreter.
   return CardService.newDecoratedText()
     .setTopLabel(severityLabel)
-    .setText(signal.summary)
+    .setText(htmlEscape(signal.summary))
     .setWrapText(true)
     .setBottomLabel(contribution);
 }
@@ -216,12 +237,14 @@ function buildBlindSpotsSection(blindSpots) {
     .setCollapsible(true)
     .setNumUncollapsibleWidgets(0);
 
+  // risk_note and reason are server constants today, but defense in depth:
+  // the rendering layer escapes anything backend-supplied before setText.
   blindSpots.forEach(function (blindSpot) {
     section.addWidget(
       CardService.newDecoratedText()
-        .setText(blindSpot.risk_note)
+        .setText(htmlEscape(blindSpot.risk_note))
         .setWrapText(true)
-        .setBottomLabel(blindSpot.reason)
+        .setBottomLabel(htmlEscape(blindSpot.reason))
     );
   });
 
@@ -252,7 +275,10 @@ function buildScopeSection(scope) {
 function formatScopeLines(scope) {
   var lines = [];
 
-  lines.push("Analyzers: " + scope.analyzers_run.join(", "));
+  // analyzer names are backend-supplied identifiers; escape defensively even
+  // though today's set is a closed list of safe snake_case strings.
+  var analyzerNames = (scope.analyzers_run || []).map(htmlEscape).join(", ");
+  lines.push("Analyzers: " + analyzerNames);
 
   lines.push(
     "HTML: " + (scope.has_html ? "yes" : "no") +

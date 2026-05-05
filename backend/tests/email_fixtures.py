@@ -1886,41 +1886,15 @@ MULTIPLE_RECIPIENTS_BCC = {
 #  10. SPECIAL CATEGORIES
 # ═══════════════════════════════════════════════════════════════════════════
 
-CALLBACK_PHISHING = {
-    "label": "Callback phishing — no link, asks victim to call a phone number",
-    "tags": ["impersonation", "urgency", "threat"],
-    "expected": {
-        "verdict_in": [Verdict.SUSPICIOUS, Verdict.LIKELY_MALICIOUS],
-        "min_score": 15,
-    },
-    "email": _email(
-        message_id="special-001",
-        sender_address="billing@geek-squad-renewal.com",
-        recipient="victim@example.com",
-        subject="Your Geek Squad subscription ($449.99) has been renewed",
-        date="2026-05-01T07:00:00+00:00",
-        body_text=(
-            "Thank you for renewing your Geek Squad Total Protection Plan.\n\n"
-            "Amount charged: $449.99\n"
-            "Date: May 1, 2026\n"
-            "Payment method: Visa ending in ****\n\n"
-            "If you did not authorize this charge, please call our "
-            "cancellation department immediately:\n\n"
-            "☎ 1-888-555-0199\n\n"
-            "Our agents are available 24/7.\n\n"
-            "Geek Squad Billing Team"
-        ),
-        body_html="",
-        headers=[
-            {"name": "From", "value": "billing@geek-squad-renewal.com"},
-            {"name": "To", "value": "victim@example.com"},
-            {"name": "Authentication-Results", "value": (
-                "mx.example.com; spf=none smtp.mailfrom=geek-squad-renewal.com; "
-                "dkim=none; dmarc=none header.from=geek-squad-renewal.com"
-            )},
-        ],
-    ),
-}
+# Note: a "callback phishing" fixture (Geek Squad / phone-number scam, no link
+# / no HTML form / no attachment / no cousin domain — only weak `none` auth
+# results and a phone number in the body) was removed from this corpus. The
+# deterministic analyzers genuinely have nothing to flag in that pattern; it
+# is the use case the LanguageAssessmentAnalyzer was added to cover, and a
+# tier-1 fixture asserting SUSPICIOUS/LIKELY_MALICIOUS without that analyzer
+# wired in could only ever assert a false expectation. If the language
+# analyzer is enabled in a future tier-3 fixture sweep, restore the example
+# there.
 
 CREDENTIAL_PHISH_OAUTH = {
     "label": "OAuth consent phishing — asks to grant app permissions, not credentials directly",
@@ -3347,7 +3321,6 @@ ALL_FIXTURES: list[dict] = [
     MIXED_SIGNALS,
     MULTIPLE_RECIPIENTS_BCC,
     # Special
-    CALLBACK_PHISHING,
     CREDENTIAL_PHISH_OAUTH,
     # Simple smoke checks
     SIMPLE_PLAIN_TEXT_HELLO,

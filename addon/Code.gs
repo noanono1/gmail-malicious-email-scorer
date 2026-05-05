@@ -39,14 +39,7 @@ function onGmailMessageOpen(event) {
     }
 
     var emailPayload = extractEmailData(messageId);
-
-    var logPayload = {
-      ...emailPayload,
-      body_html: emailPayload.body_html && emailPayload.body_html.length > 50
-        ? emailPayload.body_html.slice(0, 50) + "..."
-        : emailPayload.body_html
-    };
-    console.log("emailPayload:", JSON.stringify(logPayload, null, 2));
+    logPayloadShape(emailPayload);
 
     var analysisResult = analyzeEmail(emailPayload);
     console.log("Analysis complete — verdict: " + analysisResult.verdict + ", score: " + analysisResult.score);
@@ -85,6 +78,23 @@ function onReanalyze(event) {
     var errorCard = buildErrorCard(messageId);
     return buildNavigationResponse(errorCard);
   }
+}
+
+/**
+ * Logs only the *shape* of the extracted payload — sizes and counts, never
+ * content. Subject, body, headers, and addresses are attacker-controlled
+ * and must not appear in Stackdriver.
+ */
+function logPayloadShape(emailPayload) {
+  console.log("Email extracted: " + JSON.stringify({
+    message_id: emailPayload.message_id,
+    body_text_chars: (emailPayload.body_text || "").length,
+    body_html_chars: (emailPayload.body_html || "").length,
+    header_count: (emailPayload.headers || []).length,
+    attachment_count: (emailPayload.attachments || []).length,
+    has_reply_to: Boolean(emailPayload.reply_to_address),
+    has_return_path: Boolean(emailPayload.return_path_address),
+  }));
 }
 
 /**

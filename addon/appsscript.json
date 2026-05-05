@@ -20,7 +20,8 @@
   "addOns": {
     "common": {
       "name": "Malicious Email Scorer",
-      "logoUrl": "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f6e1.png",      "layoutProperties": {
+      "logoUrl": "https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/72x72/1f6e1.png",
+      "layoutProperties": {
         "primaryColor": "#1B8332"
       }
     },

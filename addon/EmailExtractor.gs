@@ -56,17 +56,13 @@ function extractAddress(headerValue) {
   return match ? match[1] : headerValue.trim();
 }
 
+// Only Authentication-Results is consumed by the backend today
+// (AuthenticationAnalyzer parses SPF/DKIM/DMARC results from it). Sending
+// anything else would ship internal MTA routing data (Received, X-Originating-IP)
+// to the backend without a corresponding analyzer to use it. Add headers here
+// only when a new analyzer concretely depends on them.
 var SECURITY_HEADERS = [
   "Authentication-Results",
-  "Received-SPF",
-  "DKIM-Signature",
-  "ARC-Authentication-Results",
-  "X-Mailer",
-  "X-Originating-IP",
-  "Received",
-  "To",
-  "Message-ID",
-  "Content-Type",
 ];
 
 /**
@@ -133,8 +129,8 @@ function extractSecurityHeadersFallback(gmailMessage) {
 
 /**
  * Logs which headers were extracted and how many times each appeared,
- * without dumping values. Authentication-Results and Received chains can
- * leak internal routing/IP info — names + counts only.
+ * without dumping values. Header values can leak internal routing/IP info
+ * (Authentication-Results IPs, Received chains) — names + counts only.
  */
 function logExtractedSecurityHeaders(headers, source) {
   var counts = {};

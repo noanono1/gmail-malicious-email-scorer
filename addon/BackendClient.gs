@@ -1,8 +1,13 @@
 /**
  * Sends the email payload to the backend /analyze endpoint with HMAC signing.
+ *
+ * Note: the byte-to-hex helper (`bytesToHex`) used by `computeHmacSignature`
+ * below lives in `EmailExtractor.gs`. Apps Script merges every `.gs` file
+ * in a project into a single global namespace at runtime, so the import
+ * is implicit — keep the two files together when copying the add-on.
  */
 function analyzeEmail(emailPayload) {
-  var backendUrl = getRequiredProperty("BACKEND_URL");
+  var backendUrl = getRequiredProperty("BACKEND_URL").replace(/\/+$/, "");
   var hmacSecret = getRequiredProperty("HMAC_SECRET");
   var endpoint = backendUrl + "/analyze";
 

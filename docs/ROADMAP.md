@@ -1,7 +1,7 @@
 # Roadmap
 
-Development plan for the Malicious Email Scorer.
-Deadline: 2026-05-03 evening (Upwind Bootcamp submission).
+Development plan for the Malicious Email Scorer — tier-by-tier scope,
+delivered, in-flight, and explicitly out-of-scope work.
 
 ---
 

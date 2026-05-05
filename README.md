@@ -6,49 +6,53 @@ A Gmail Add-on that analyzes an opened email and produces a maliciousness score 
 
 ## Overview
 
-Every result includes the analysis scope, specific findings with evidence, and a declaration of blind spots — what the system could not inspect for this particular email and what risks might remain there.
+A thin Apps Script add-on POSTs the open message (HMAC-signed) to a Python backend. The backend runs five deterministic analyzers (authentication, sender, URL, body structure, attachment) plus one schema-constrained semantic analyzer (language assessment), folds their signals into a score with category caps and a cross-category boost, and returns a verdict together with a runtime-generated declaration of what *wasn't* checked. The card renders score, verdict, top signals (each with verbatim evidence), and the limitations.
+
+Three things worth a closer look:
+
+- **Deterministic / semantic seam** — rules where the artifact is structured, one constrained extractor where the artifact is language. The semantic analyzer is severity-capped so a probabilistic verdict can never single-handedly drive `MALICIOUS`. ([Detection Capabilities](#detection-capabilities))
+- **Limitations as a first-class output** — every result declares the inspection channels it could not use, so a `safe` verdict is never confused with "fully inspected." ([Limitations](#limitations))
+- **Local SLM by default** — attacker-controlled email content stays on the host; OpenAI is an opt-in alternative behind the same `LlmService` port with the same prompt-injection defenses. ([Trade-offs](#trade-offs))
+
+---
+
+## Gmail Add-on UI
+
+The card is the user-facing surface — score, verdict, top signals (each with the verbatim evidence that triggered them), and a runtime-generated limitations panel.
+
+> **Screenshots pending.** Drop the files below into `docs/img/` and the references in this section will render.
+>
+> - `docs/img/card-safe.png` — clean transactional email; verdict `safe`, limitations panel visible
+> - `docs/img/card-suspicious.png` — softfail + Reply-To mismatch; verdict `suspicious`
+> - `docs/img/card-malicious.png` — cousin domain + DMARC fail + IP-literal URL; verdict `malicious`
 
 ---
 
 ## Architecture
 
-```
-┌──────────────────────────────┐
-│        Gmail Add-on          │
-│       (Apps Script)          │
-│                              │
-│  Extract email data ──────┐ │
-│  Render Card UI    ◄────┐ │ │
-└─────────────────────────┼─┼─┘
-                          │ │
-                     POST │ │ JSON
-                  /analyze│ │ response
-                          │ │
-┌─────────────────────────┼─┼─┘
-│        Backend (FastAPI) ▼ │
-│  ┌───────────────────────┐ │
-│  │   Detection Engine    │ │
-│  │  ┌─────────────────┐  │ │
-│  │  │  Deterministic   │  │ │
-│  │  │   analyzers:     │  │ │
-│  │  │  Authentication  │  │ │
-│  │  │  Sender          │  │ │
-│  │  │  URL             │  │ │
-│  │  │  Body (HTML form)│  │ │
-│  │  │  Attachment      │  │ │
-│  │  └─────────────────┘  │ │
-│  │  ┌─────────────────┐  │ │
-│  │  │ Semantic analyzer│  │ │
-│  │  │ Language         │  │ │
-│  │  │  assessment      │  │ │
-│  │  │  (local SLM,     │  │ │
-│  │  │   grounded)      │  │ │
-│  │  └─────────────────┘  │ │
-│  │  Scoring ─► Verdict   │ │
-│  │  Coverage ─► Blind    │ │
-│  │              Spots    │ │
-│  └───────────────────────┘ │
-└────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Client["Gmail Add-on (Apps Script)"]
+        EX[Extract email data]
+        UI[Render verdict card]
+    end
+
+    subgraph Backend["Backend (FastAPI)"]
+        direction TB
+        HTTP["HTTP adapter<br/>HMAC · rate limit · schemas"]
+        subgraph Engine["Detection engine (pure Python)"]
+            direction TB
+            DET["Deterministic analyzers<br/>auth · sender · URL · body · attachment"]
+            SEM["Semantic analyzer<br/>language assessment<br/>local SLM (default) / OpenAI"]
+            SCORE["Scoring + verdict<br/>Coverage + limitations"]
+            DET --> SCORE
+            SEM --> SCORE
+        end
+        HTTP --> Engine
+    end
+
+    EX -- "POST /analyze" --> HTTP
+    SCORE -- "JSON response" --> UI
 ```
 
 | Component | Role | Rationale |
@@ -57,6 +61,41 @@ Every result includes the analysis scope, specific findings with evidence, and a
 | **Backend** (Python / FastAPI) | Decision engine — all analysis, scoring, and explanation logic. | Python provides proper libraries, type safety, testability, and independent evolution of detection logic. |
 
 The detection engine (`detection_engine/`) is a pure Python library with zero web framework dependencies. It can be imported from a CLI, a test suite, or a different web framework. The FastAPI layer (`app/`) is a thin HTTP adapter.
+
+### Project structure
+
+```
+.
+├── addon/                         # Gmail Add-on (Google Apps Script — runs inside Gmail)
+│   ├── Code.gs                    # Lifecycle triggers (onGmailMessage)
+│   ├── EmailExtractor.gs          # Pulls headers, body, attachments from the open message
+│   ├── BackendClient.gs           # HMAC-signed POST /analyze
+│   ├── CardBuilder.gs             # Renders the verdict card (score, signals, limitations)
+│   └── appsscript.json            # Manifest + OAuth scopes
+├── backend/
+│   ├── app/                       # FastAPI thin adapter — HTTP, auth, rate limit, schemas
+│   │   ├── main.py                # ASGI app, middleware, route wiring
+│   │   ├── auth.py                # HMAC verification
+│   │   ├── rate_limit.py          # Per-IP fixed-window limiter
+│   │   ├── schemas.py             # Request/response Pydantic models
+│   │   ├── config.py              # Env-driven settings (HMAC, rate limits, LLM provider)
+│   │   └── routes/                # /analyze, /healthz
+│   ├── detection_engine/          # Pure-Python detection library — no web framework deps
+│   │   ├── engine.py              # Orchestrator: run analyzers → score → assemble result
+│   │   ├── scoring.py             # Severity weights, attenuation, category cap, cross-cat boost, dampener
+│   │   ├── analyzers/             # One module per signal family (auth, sender, url, body, attachment, language)
+│   │   ├── domain/                # Shared dataclasses (Email, Signal, Verdict, BlindSpot, enums)
+│   │   └── utils/                 # Domain parsing, typosquat detection
+│   ├── infrastructure/llm/        # LlmService port + interchangeable providers
+│   │   ├── _prompt.py             # Shared prompt + grounding/validation
+│   │   ├── local_slm.py           # Ollama provider (default)
+│   │   └── openai_llm.py          # OpenAI provider (opt-in)
+│   ├── tests/                     # pytest suite
+│   └── requirements.txt
+└── docs/
+    ├── detection-policy.md        # Worked scoring examples, deferred indicators
+    └── ROADMAP.md
+```
 
 ---
 
@@ -150,10 +189,10 @@ Thresholds are calibrated against test cases including both attack patterns and 
 | Secrets | Environment variables via `.env` (backend) and `PropertiesService` (Apps Script). |
 | Data retention | No email content persisted beyond request lifecycle. Stateless by design. |
 | Logging | Analysis metadata only (timing, analyzer names, verdict). Never email content. |
-| Backend access | HMAC-signed requests with timestamp replay protection. |
+| Backend access | HMAC-signed requests with a 5-minute timestamp drift bound — stale signatures are rejected, but full nonce-based replay protection (rejecting a captured signature *inside* the drift window) is a deferred item, called out under "Future Improvements." |
 | Request size | Hard cap on the raw request body (default 1 MiB, configurable). Oversized requests are rejected with 413 before HMAC reads the body. |
 | API schema visibility | `/docs`, `/redoc`, and `/openapi.json` are unconditionally disabled. The API surface is not published. |
-| Rate limiting / DoS | Per-request bounds are enforced in-app (HMAC, timestamp drift, body-size cap, Pydantic field limits). A per-IP fixed-window limiter on `/analyze` (`RATE_LIMIT_PER_WINDOW`/`RATE_LIMIT_WINDOW_SECONDS`, default 60 req / 60 s) bounds compute per client and runs *before* HMAC so blocked clients short-circuit before SHA256 reads the body. The limiter is in-process and per-worker — sufficient for the single-uvicorn-worker demo but not durable: a multi-worker or horizontally scaled deployment needs a shared store (Redis), and volumetric DDoS mitigation still belongs at the edge (Cloudflare, Railway, Fly). `X-Forwarded-For` is intentionally not trusted — without a known proxy, honoring it would let callers spoof their key. |
+| Rate limiting / DoS | <ul><li>**Per-request bounds:** HMAC, timestamp drift, body-size cap, Pydantic field limits.</li><li>**Per-IP limiter on `/analyze`:** fixed-window (`RATE_LIMIT_PER_WINDOW` / `RATE_LIMIT_WINDOW_SECONDS`, default 60 req / 60 s). Runs *before* HMAC so blocked clients short-circuit before SHA256 reads the body.</li><li>**Scope:** in-process and per-worker — sufficient for the single-uvicorn-worker demo, not durable. Multi-worker or horizontally scaled deployments need a shared store (Redis); volumetric DDoS mitigation belongs at the edge (Cloudflare, Railway, Fly).</li><li>**`X-Forwarded-For` not trusted** — without a known proxy in front, honoring it would let callers spoof their key.</li></ul> |
 | Code execution | No `eval`, `exec`, or dynamic execution on any input path. |
 
 ---
@@ -212,15 +251,17 @@ The full `/analyze` endpoint requires an HMAC-signed request (see "API Contract"
 1. Create a new project at [Google Apps Script](https://script.google.com)
 2. Add the add-on source — either:
    - **Copy-paste:** copy `Code.gs`, `EmailExtractor.gs`, `BackendClient.gs`, `CardBuilder.gs` from `addon/` into the project
-   - **Or via `clasp`:** run `clasp create` in your own clone, then `clasp push` from `addon/`. Note: `addon/.clasp.json` is committed and points to *this* repo's script ID — replace it with your own after `clasp create`
+   - **Or via `clasp`:** run `clasp create` in your own clone (this generates a local `addon/.clasp.json` pointing at the script you just created — gitignored, never committed), then `clasp push` from `addon/`
 3. Replace `appsscript.json` with the project manifest from `addon/appsscript.json`
 4. Set script properties (Project Settings → Script Properties):
-   - `BACKEND_URL` — backend's HTTPS URL, no trailing slash. Examples: `https://abcd1234.ngrok.io`, `https://my-app.up.railway.app`
+   - `BACKEND_URL` — backend's HTTPS URL. Examples: `https://abcd1234.ngrok.io`, `https://my-app.up.railway.app`. A trailing slash is tolerated.
    - `HMAC_SECRET` — shared HMAC secret. **Must match** the `HMAC_SECRET` value in `backend/.env`
 5. Deploy as a test add-on (Apps Script editor → Deploy → Test deployments → Install) and authorize for your Gmail account
 6. Open any email — the add-on card appears in the right-hand panel
 
-### Tests
+---
+
+## Tests
 
 ```bash
 cd backend
@@ -228,11 +269,21 @@ source .venv/bin/activate
 python -m pytest tests/ -v
 ```
 
-Tests do not require a configured `.env` — `tests/conftest.py` seeds a stand-in `HMAC_SECRET` before any module imports `app.config`. Only `uvicorn` requires the real value.
+Tests do not require a configured `.env` — `tests/conftest.py` seeds a stand-in `HMAC_SECRET` before any module imports `app.config`. Only `uvicorn` needs the real value at runtime.
 
 ---
 
 ## API Contract
+
+### `GET /healthz`
+
+Liveness probe. No authentication, no request body.
+
+**Response:**
+
+```json
+{ "status": "ok" }
+```
 
 ### `POST /analyze`
 
@@ -373,6 +424,16 @@ Tests do not require a configured `.env` — `tests/conftest.py` seeds a stand-i
 
 ---
 
+## What I'd Prioritize Next
+
+If I had another week, in order:
+
+1. **Ground-truth calibration over a labeled corpus.** The scoring constants and verdict thresholds are reasoned — base points per severity, attenuation rate, category cap, cross-category boost — and validated against curated test cases. The next move is to tune them against a labeled real-world set (mixed phishing, BEC, transactional, marketing, internal) and pick thresholds that hit explicit precision/recall targets, not thresholds I picked. Single highest-leverage change for verdict quality.
+2. **Closed-loop URL verification in an isolated sandbox.** The static URL analyzer flags structure (IP literals, anchor/href mismatch, dangerous schemes) but cannot follow redirects or verify destinations — currently declared as the `url_destination` blind spot. A sandboxed fetcher with separate network egress, no cookies, and no credentials, paired with the existing static signals, would convert a known blind spot into a finding while preserving the no-outbound-from-app guarantee.
+3. **Production-grade rate limiting + edge throttling.** The in-process per-IP fixed-window limiter is honest-but-bounded: per-worker state, no horizontal scaling, no volumetric DDoS coverage. A Redis-backed limiter behind the FastAPI app plus a platform-edge throttle (Cloudflare / Railway / Fly) closes the gap without changing application logic.
+
+---
+
 ## Future Improvements
 
 - **External threat intelligence** — wire in network-backed lookups (Google Safe Browsing for URL reputation, WHOIS/RDAP for domain age, VirusTotal/AbuseIPDB for hash reputation). Out of scope for this build to keep the system static, deterministic, and free of third-party dependencies, but a natural next layer once those tradeoffs are acceptable.
@@ -381,3 +442,4 @@ Tests do not require a configured `.env` — `tests/conftest.py` seeds a stand-i
 - **Feedback loop** — user reporting of false positives/negatives for threshold tuning
 - **Caching** — memoize results by message ID for repeated opens
 - **Distributed rate limiting** — replace the in-process per-IP fixed-window limiter with a shared-store implementation (Redis) that survives multiple workers and instances, and front the API with edge throttling at the platform layer (Cloudflare, Railway, Fly) for volumetric DDoS coverage.
+- **Nonce-based replay protection** — today the HMAC layer rejects signatures whose timestamp falls outside a 5-minute drift window, but does not deduplicate signatures within that window. A captured request can be replayed up to 300 s after it was first sent. The fix is small (a per-process LRU of recently accepted `(timestamp, signature)` tuples, or a per-request nonce header), and the existing tests already cover the drift bound — adding a replay-rejection test alongside is the natural extension.

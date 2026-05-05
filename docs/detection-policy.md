@@ -103,7 +103,7 @@ These indicators analyze links in the email body without following them.
 
 | ID | Indicator | What it detects | Severity | Signal strength | FP risk | Implementation notes |
 |---|---|---|---|---|---|---|
-| **URL-1** | href ≠ display text mismatch | Link text says "paypal.com" but href points elsewhere | CRITICAL | Very strong — deliberate deception | Very low — legit emails wont probably do this | Parse HTML `<a>` tags, extract href and inner text. If inner text looks like a URL (contains a dot and no spaces), compare its domain against the href domain |
+| **URL-1** | href ≠ display text mismatch | Link text says "paypal.com" but href points elsewhere | CRITICAL | Very strong — deliberate deception | Very low — legitimate emails almost never do this | Parse HTML `<a>` tags, extract href and inner text. If inner text looks like a URL (contains a dot and no spaces), compare its domain against the href domain |
 | **URL-2** | IP-literal host in URL | `http://192.168.1.100/verify`, `http://[::1]/verify` | HIGH | Strong — legitimate services use domain names | Low | Parse the URL host and validate it with `ipaddress.ip_address` (covers IPv4 and IPv6) |
 | **URL-3** | Dangerous URI scheme in href | `javascript:`, `data:`, `vbscript:`, `file:` URLs in `<a>` tags | CRITICAL | Very strong — mail clients block or strip these; surviving instances read as evasion | Very low — legitimate mail does not link these schemes | Parse the href scheme on every HTML link; flag anything in the dangerous-scheme set |
 
