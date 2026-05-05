@@ -12,7 +12,7 @@ Three things worth a closer look:
 
 - **Deterministic / semantic seam** — rules where the artifact is structured, one constrained extractor where the artifact is language. The semantic analyzer is severity-capped so a probabilistic verdict can never single-handedly drive `MALICIOUS`. ([Detection Capabilities](#detection-capabilities))
 - **Limitations as a first-class output** — every result declares the inspection channels it could not use, so a `safe` verdict is never confused with "fully inspected." ([Limitations](#limitations))
-- **Local SLM by default** — attacker-controlled email content stays on the host; OpenAI is an opt-in alternative behind the same `LlmService` port with the same prompt-injection defenses. ([Trade-offs](#trade-offs))
+- **Local SLM by design** — the language analyzer runs against a local SLM specifically because email content is attacker-controlled and must not leave the host. An OpenAI implementation also lives behind the same `LlmService` port for development iteration, but it is not a recommended deployment configuration. ([Trade-offs](#trade-offs))
 
 ---
 
@@ -45,7 +45,7 @@ flowchart LR
         subgraph Engine["Detection engine (pure Python)"]
             direction TB
             DET["Deterministic analyzers<br/>auth · sender · URL · body · attachment"]
-            SEM["Semantic analyzer<br/>language assessment<br/>local SLM (default) / OpenAI"]
+            SEM["Semantic analyzer<br/>language assessment<br/>local SLM"]
             SCORE["Scoring + verdict<br/>Coverage + limitations"]
             DET --> SCORE
             SEM --> SCORE
@@ -88,10 +88,10 @@ The detection engine (`detection_engine/`) is a pure Python library with zero we
 │   │   ├── analyzers/             # One module per signal family (auth, sender, url, body, attachment, language)
 │   │   ├── domain/                # Shared dataclasses (Email, Signal, Verdict, BlindSpot, enums)
 │   │   └── utils/                 # Domain parsing, typosquat detection
-│   ├── infrastructure/llm/        # LlmService port + interchangeable providers
+│   ├── infrastructure/llm/        # LlmService port — local SLM is the deployment path
 │   │   ├── _prompt.py             # Shared prompt + grounding/validation
-│   │   ├── local_slm.py           # Ollama provider (default)
-│   │   └── openai_llm.py          # OpenAI provider (opt-in)
+│   │   ├── local_slm.py           # Ollama provider — the deployment path
+│   │   └── openai_llm.py          # OpenAI provider — development only, see Trade-offs
 │   ├── tests/                     # pytest suite
 │   └── requirements.txt
 └── docs/
@@ -119,7 +119,7 @@ The engine splits analyzers along a deliberate seam: **rules where the artifact 
 
 | Analyzer | Category | Signals |
 |---|---|---|
-| **Language Assessment** | Body content | One `manipulative_language` signal (LOW–HIGH) derived from a structured assessment of the body: requested action, pressure level, claimed authority, manipulation tactics. Behind an `LlmService` port with two interchangeable providers — a **local** SLM (Ollama, default; email content never leaves the host) and **OpenAI** (Chat Completions; opt-in tradeoff that sends content to a third party). Output is schema-constrained (Pydantic + Ollama `format` for local, `response_format` for OpenAI), and any non-default finding must include a verbatim evidence quote that grounds in the email source; ungrounded responses are rejected as a blind spot. Severity is capped at HIGH so a probabilistic verdict cannot single-handedly drive an email to MALICIOUS — CRITICAL stays reserved for findings provable from the artifact (cousin domain, HTML form, dangerous extension). Off by default (`LANGUAGE_ANALYZER_ENABLED=false`); when disabled or the configured provider is unreachable, a `language_assessment` blind spot is reported instead. |
+| **Language Assessment** | Body content | One `manipulative_language` signal (LOW–HIGH) derived from a structured assessment of the body: requested action, pressure level, claimed authority, manipulation tactics. Runs against a **local SLM (Ollama)** so attacker-controlled email content never leaves the host — that's the design choice, not a tradeoff. The analyzer sits behind an `LlmService` port; an OpenAI implementation also exists in the repo as a development convenience for iterating without a running Ollama, but it is not a recommended deployment configuration (enabling it sends subjects and bodies to a third party). Output is schema-constrained (Pydantic + Ollama `format`) and any non-default finding must include a verbatim evidence quote that grounds in the email source; ungrounded responses are rejected as a blind spot. Severity is capped at HIGH so a probabilistic verdict cannot single-handedly drive an email to MALICIOUS — CRITICAL stays reserved for findings provable from the artifact (cousin domain, HTML form, dangerous extension). Off by default (`LANGUAGE_ANALYZER_ENABLED=false`); when disabled or the local SLM is unreachable, a `language_assessment` blind spot is reported instead. |
 
 ---
 
@@ -153,7 +153,7 @@ The scoring engine converts signals into a final score and verdict. Constants li
 | INFO | 0 | Appears in report, never affects score |
 | LOW | 5 | Supporting signal — needs corroboration |
 | MEDIUM | 12 | Notable but not alarming alone |
-| HIGH | 25 | Two HIGH signals from different categories cross SUSPICIOUS |
+| HIGH | 25 | Two from different categories reach LIKELY_MALICIOUS after the cross-category boost |
 | CRITICAL | 40 | One alone reaches LIKELY_MALICIOUS |
 
 Every point in the final score traces back to a specific finding with verbatim evidence in its summary.
@@ -167,6 +167,8 @@ Every point in the final score traces back to a specific finding with verbatim e
 **Infrastructure-only dampener** — when ≥2 active categories are firing, *all* of them are AUTHENTICATION or SENDER_IDENTITY ("infrastructure looks unsettled" signals), and *no* category contributes a CRITICAL-strength score (≥40), the run is multiplied by `×0.78`. This is the false-positive guard for the "SPF softfail + Reply-To mismatch on a small-vendor email" pattern: two HIGH signals across two categories that would otherwise reach LIKELY_MALICIOUS, but with no URL/body/attachment evidence declaring an actual attack. A decisive infrastructure finding (DMARC fail at CRITICAL, cousin domain at CRITICAL) disables the dampener — it's strong enough to justify the verdict on its own.
 
 **Inspection-gap floor** — when zero signals fired but a primary inspection channel was unavailable (today: the `language_assessment` blind spot), the verdict is floored from `safe` to `inconclusive` rather than certified safe on missing coverage. The numeric score stays 0 because there was nothing to score.
+
+**Score range** — the final score is clamped to `0–100`; the boost can push raw signal-sums above that, but the verdict bands and the response field both cap there.
 
 ### Verdict thresholds
 
@@ -206,12 +208,8 @@ Thresholds are calibrated against test cases including both attack patterns and 
 - Python 3.11+
 - A Google Workspace account (for installing the add-on)
 - An HTTPS-reachable backend URL — Apps Script cannot call `http://localhost`. For local development, expose the backend via [ngrok](https://ngrok.com/) or [cloudflared](https://github.com/cloudflare/cloudflared); for a stable demo, deploy to a host of your choice (Railway, Fly, Render, etc.)
-- *(optional)* a language-model backend for the Language Assessment analyzer — choose one:
-  - [Ollama](https://ollama.com/) running a small model (default: `gemma:2b`) for the **local** provider — email content stays on the host
-  - an OpenAI API key for the **openai** provider — sends email subjects and bodies to a third party (opt-in tradeoff)
-
-  Without either, the deterministic analyzers still run on their own and a `language_assessment` blind spot is reported on every email
-- *(optional)* [`clasp`](https://github.com/google/clasp) for pushing the add-on from the CLI instead of copy-paste — see `CLAUDE.md` for the workflow
+- *(optional)* [Ollama](https://ollama.com/) running a small model (default: `gemma:2b`) for the Language Assessment analyzer — this is the intended path; email content stays on the host. Without it, the deterministic analyzers still run on their own and a `language_assessment` blind spot is reported on every email. (An OpenAI provider also exists in the repo for development iteration without a local Ollama, but it is not a recommended deployment configuration — see [Trade-offs](#trade-offs).)
+- *(optional)* [`clasp`](https://github.com/google/clasp) for pushing the add-on from the CLI instead of copy-paste — see the Gmail Add-on setup steps below
 
 ### Backend
 
@@ -227,11 +225,12 @@ cp .env.example .env
 # shows how to generate one). Use the same value as the Apps Script property.
 # Optional knobs documented in .env.example: LOG_LEVEL, MAX_REQUEST_BYTES,
 # RATE_LIMIT_PER_WINDOW / RATE_LIMIT_WINDOW_SECONDS (per-IP fixed-window limit
-# on /analyze, default 60 req / 60 s), LANGUAGE_PROVIDER (local | openai),
-# LLM_HOST / LLM_MODEL / LLM_TIMEOUT (local provider), OPENAI_API_KEY /
-# OPENAI_MODEL / OPENAI_TIMEOUT (openai provider), and
-# LANGUAGE_ANALYZER_ENABLED (set to "true" once the selected provider is
-# reachable to wire in the Language Assessment analyzer).
+# on /analyze, default 60 req / 60 s), LANGUAGE_PROVIDER (leave as 'local' for
+# deployment — the 'openai' value exists for development iteration only;
+# see Trade-offs), LLM_HOST / LLM_MODEL / LLM_TIMEOUT (local provider),
+# OPENAI_API_KEY / OPENAI_MODEL / OPENAI_TIMEOUT (development only), and
+# LANGUAGE_ANALYZER_ENABLED (set to "true" once Ollama is reachable to wire
+# in the Language Assessment analyzer).
 
 # Run
 uvicorn app.main:app --reload --port 8000
@@ -416,7 +415,7 @@ Liveness probe. No authentication, no request body.
 
 **Rules for structure, one constrained extractor for language** — header, address, URL, attachment, and HTML-structure findings are deterministic rules with verbatim evidence. Language understanding is isolated into a single SLM-backed analyzer with a closed-set schema, grounded evidence quotes, and a HIGH severity ceiling, so a probabilistic verdict can amplify but never solely drive a MALICIOUS verdict. Splitting along this seam keeps the system explainable where rules suffice and resilient to paraphrase where they don't.
 
-**Local SLM by default, OpenAI as opt-in alternative** — the language analyzer talks to an `LlmService` port; the default provider is a local Ollama-served SLM, so attacker-controlled email content never leaves the host. An OpenAI provider exists as a drop-in alternative for environments without a local model, but enabling it sends subjects and bodies to a third party — that tradeoff is opt-in, never the default. Both providers share the same prompt-injection defenses (per-request random delimiter, Unicode hygiene, schema-strict parsing, evidence grounding) and the same blind-spot fallback when the backend is unreachable. Grammar-constrained decoding (`format` for Ollama, `response_format` for OpenAI) keeps outputs inside the closed-set schema. Neither provider pins `temperature` — newer reasoning-class OpenAI models reject non-default values, so the two stay symmetric on this point.
+**Local SLM by design — security choice, not a fallback** — the language analyzer runs against a local Ollama-served SLM specifically because email content is attacker-controlled and must not leave the host. The `LlmService` port also has an OpenAI implementation in the repo, but that exists as a development convenience for iterating on the analyzer without a running Ollama — it is not a recommended runtime configuration, since enabling it sends subjects and bodies to a third party. Both implementations share the same prompt-injection defenses (per-request random delimiter, Unicode hygiene, schema-strict parsing, evidence grounding) and the same blind-spot fallback when the backend is unreachable. Grammar-constrained decoding (`format` for Ollama, `response_format` for OpenAI) keeps outputs inside the closed-set schema. Neither provider pins `temperature` — newer reasoning-class OpenAI models reject non-default values, so the two stay symmetric on this point.
 
 **Static analysis over dynamic** — URLs are pattern-matched but never fetched. Cannot detect redirect chains or cloaked pages, but eliminates SSRF and data exfiltration risks from outbound connections to attacker infrastructure.
 

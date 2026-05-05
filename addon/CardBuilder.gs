@@ -55,13 +55,7 @@ function buildAnalysisCard(result, messageId) {
 
   cardBuilder.addSection(buildVerdictSection(result, verdictStyle));
 
-  var hasFindings = result.top_signals && result.top_signals.length > 0;
-
-  if (result.explanation && !hasFindings) {
-    cardBuilder.addSection(buildSummarySection(result.explanation));
-  }
-
-  if (hasFindings) {
+  if (result.top_signals && result.top_signals.length > 0) {
     cardBuilder.addSection(buildFindingsSection(result.top_signals));
   }
 
@@ -125,19 +119,6 @@ function buildScoreBarHtml(score, color) {
 
   return "<font color=\"" + color + "\">" + filled + "</font>" +
          "<font color=\"#DADCE0\">" + empty + "</font>";
-}
-
-/**
- * Explanation / summary text.
- */
-function buildSummarySection(explanation) {
-  var section = CardService.newCardSection().setHeader("Summary");
-
-  section.addWidget(
-    CardService.newTextParagraph().setText(htmlEscape(explanation))
-  );
-
-  return section;
 }
 
 /**
