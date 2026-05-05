@@ -15,27 +15,20 @@ from detection_engine.domain.signals import AnalysisOutput, BlindSpot, Signal
 
 
 class _AuthMethod(str, Enum):
-    """RFC 7601 authentication methods this analyzer evaluates.
-
-    `str` mixin lets enum members be used directly in string contexts
-    (regex assembly, dict lookup against str-typed catalog interfaces)
-    while still giving us type-checked keys inside this module."""
+    """RFC 7601 authentication methods this analyzer evaluates."""
 
     SPF = "spf"
     DKIM = "dkim"
     DMARC = "dmarc"
 
 
-# Per RFC 7601, every result token belongs to a fixed vocabulary. Each
-# (method, result) pair maps to one or two outcomes:
-#   - benign       : pass / neutral — no signal, no blind spot
-#   - blind spot   : temperror — transient DNS/lookup noise, not the
-#                    domain-owner's posture; never carries score
-#   - blind spot + : none — both a coverage gap (we cannot enforce) AND a
-#     weak signal    weak risk indicator that stacks with other findings
-#   - signal       : fail / softfail / permerror / policy — verification
-#                    actually ran and produced a non-pass outcome
-# Unknown result strings are treated as benign rather than crashing.
+# Per RFC 7601 each (method, result) pair maps to one or two outcomes:
+#   benign       : pass / neutral — no signal, no blind spot
+#   blind spot   : temperror — transient noise, never carries score
+#   blind spot + : none — coverage gap AND a weak risk indicator
+#     weak signal
+#   signal       : fail / softfail / permerror / policy — verification ran
+# Unknown results are treated as benign.
 
 _BENIGN_RESULTS = frozenset({"pass", "neutral"})
 _BLIND_SPOT_RESULTS = frozenset({"none", "temperror"})
@@ -67,8 +60,8 @@ _EVIDENCE_TEMPLATES: dict[_AuthMethod, str] = {
     _AuthMethod.DMARC: "DMARC policy returned '{result}' for sender domain",
 }
 
-# Match every "method=result" token. Case-insensitive, tolerates whitespace
-# around the equals sign. Parenthesized comments are stripped before matching.
+# Match every "method=result" token, case-insensitive. Parenthesized
+# comments are stripped before matching.
 _RESULT_TOKEN_PATTERN = re.compile(
     rf"\b(?P<auth_method>{'|'.join(m.value for m in _AuthMethod)})\s*=\s*(?P<result>[a-z]+)",
     re.IGNORECASE,
@@ -97,9 +90,8 @@ class AuthenticationAnalyzer(BaseAnalyzer):
         for auth_method, result in auth_method_results.items():
             if result in _BENIGN_RESULTS:
                 continue
-            # `none` lives in both _BLIND_SPOT_RESULTS and _SIGNAL_POLICY by
-            # design: it is a coverage gap *and* a weak risk indicator.
-            # `temperror` lives only in _BLIND_SPOT_RESULTS — transient.
+            # `none` deliberately lives in both — coverage gap AND weak
+            # indicator. `temperror` is transient-only.
             if result in _BLIND_SPOT_RESULTS:
                 blind_spots.append(authentication_unenforceable(auth_method.value, result))
             policy = _SIGNAL_POLICY.get((auth_method, result))
@@ -113,10 +105,8 @@ class AuthenticationAnalyzer(BaseAnalyzer):
     ) -> dict[_AuthMethod, str]:
         """Parse Authentication-Results headers into a {method: result} map.
 
-        First occurrence wins across multiple headers: the receiving MTA we
-        trust prepends its own Authentication-Results header, so we keep its
-        verdict and ignore later headers from upstream relays whose claims
-        we cannot trust.
+        First occurrence wins: the trusted receiving MTA prepends its own
+        header; later headers from upstream relays cannot be trusted.
         """
         results: dict[_AuthMethod, str] = {}
         for header_value in header_values:

@@ -8,16 +8,10 @@ from detection_engine.domain.blind_spot_catalog import ATTACHMENT_CONTENT
 from detection_engine.domain.enums import SignalCategory, SignalSeverity
 from detection_engine.domain.signals import AnalysisOutput, Signal
 
-# TODO: .html/.htm are debatable as "dangerous" attachments. Unlike the other extensions
-# here (which execute code natively on the OS), HTML files only run in a browser and are
-# routinely attached to legitimate emails (e.g. receipts, reports, newsletter archives).
-# The risk is real — an HTML attachment can contain a credential-harvesting form or JS
-# redirect — but the false-positive rate may be too high for CRITICAL severity.
-# Options: (a) keep them but lower to HIGH or MEDIUM severity, (b) remove them and rely
-# on CONTENT-3 (HTML form detection) which already catches the main attack pattern,
-# (c) keep at CRITICAL but add an allowlist for common legitimate MIME subtypes.
-# The other non-original extensions (.com, .pif, .hta, .wsf, .cpl, .reg) are genuine
-# executable/control-panel threats and should stay.
+# TODO: .html/.htm at CRITICAL is debatable — HTML attachments can carry
+# credential-harvesting forms but also appear in legitimate receipts/reports.
+# Options: lower severity, remove (HTML-form analyzer covers the main attack),
+# or keep with a MIME-subtype allowlist.
 _DANGEROUS_EXTENSIONS: frozenset[str] = frozenset({
     ".exe", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".msi",
     ".com", ".pif", ".hta", ".wsf", ".cpl", ".reg",
@@ -123,8 +117,6 @@ class AttachmentAnalyzer(BaseAnalyzer):
         )
 
     def _password_protected_archive_signal(self, email: EmailData) -> Signal | None:
-        # Cheap archive check first; password-text scan only runs if there is
-        # something to be password-protecting.
         has_archive = any(
             a.mime_type in _ARCHIVE_MIME_TYPES for a in email.attachments
         )

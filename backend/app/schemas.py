@@ -16,13 +16,6 @@ from detection_engine import (
     Verdict,
 )
 
-# DTOs / API schemas
-
-# ---------------------------------------------------------------------------
-# Request models — what the Add-on sends us
-# ---------------------------------------------------------------------------
-
-
 class HeaderEntry(BaseModel):
     """Single email header as {name, value} — matches Gmail API format."""
 
@@ -30,9 +23,7 @@ class HeaderEntry(BaseModel):
     value: str = Field(max_length=16_384, description="Header field value")
 
 
-# Sanity bound on reported attachment size. Gmail caps individual attachments
-# at 25 MB; 25 MiB gives us byte-aligned headroom while still rejecting absurd
-# values (e.g. a malicious client claiming a 100 GB attachment).
+# Gmail caps attachments at 25 MB; 25 MiB gives byte-aligned headroom.
 _MAX_ATTACHMENT_SIZE_BYTES = 26_214_400
 
 
@@ -53,8 +44,8 @@ class AnalyzeRequest(BaseModel):
     sender_display_name: str = Field(default="", max_length=512)
     recipient: str = Field(max_length=512)
     subject: str = Field(max_length=2048)
-    body_text: str = Field(default="", max_length=262_144)   # 256KB limit
-    body_html: str = Field(default="", max_length=262_144)   # 256KB limit
+    body_text: str = Field(default="", max_length=262_144)
+    body_html: str = Field(default="", max_length=262_144)
     reply_to_address: str = Field(default="", max_length=256)
     return_path_address: str = Field(default="", max_length=256)
     headers: list[HeaderEntry] = Field(
@@ -66,7 +57,6 @@ class AnalyzeRequest(BaseModel):
     date: datetime | None = None
 
     def to_domain(self) -> EmailData:
-        """Convert to domain dataclass for the engine."""
         return EmailData(
             message_id=self.message_id,
             sender_address=self.sender_address,
@@ -92,7 +82,7 @@ class AnalyzeRequest(BaseModel):
 
 
 class SignalResponse(BaseModel):
-    """Wire shape for a scored signal — flattens ScoredSignal for the addon."""
+    """Wire shape for a scored signal — flattens ScoredSignal."""
 
     id: str
     category: SignalCategory
@@ -127,8 +117,6 @@ class AnalyzeResponse(BaseModel):
 
     @classmethod
     def from_domain(cls, analysis_result: AnalysisResult) -> AnalyzeResponse:
-        """Convert domain AnalysisResult to API response."""
-
         def _scored_to_response(scored: ScoredSignal) -> SignalResponse:
             return SignalResponse(
                 id=scored.signal.id,

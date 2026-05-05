@@ -12,8 +12,7 @@ from detection_engine import AnalyzerCrashed
 
 logger = structlog.get_logger()
 
-# Rate limit runs before HMAC so blocked clients short-circuit before the
-# SHA256 verification reads and hashes the request body.
+# Rate limit runs before HMAC so blocked clients short-circuit before SHA256.
 router = APIRouter(
     tags=["analysis"],
     dependencies=[Depends(enforce_rate_limit), Depends(verify_hmac)],

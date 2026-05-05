@@ -16,7 +16,6 @@ async def verify_hmac(
     x_signature: str = Header(),
     x_timestamp: str = Header(),
 ) -> None:
-    """HMAC-SHA256 request authentication. Rejects expired or tampered requests."""
     try:
         request_timestamp = int(x_timestamp)
     except ValueError:

@@ -59,10 +59,10 @@ def _is_ip_literal(host: str) -> bool:
 
 
 class UrlStructureAnalyzer(BaseAnalyzer):
-    """Detects deliberate URL deception: link text that lies about its destination,
-    and hosts that name a raw IP instead of a domain. Both are low-FP, high-signal
-    indicators of phishing infrastructure. Weaker URL heuristics (shorteners, link
-    counts) are intentionally excluded — see docs/detection-policy.md."""
+    """Detects deliberate URL deception (link-text lying, IP-literal hosts).
+
+    Both are low-FP, high-signal phishing indicators. Weaker heuristics
+    (shorteners, link counts) are excluded — see docs/detection-policy.md."""
 
     @property
     def name(self) -> str:

@@ -16,9 +16,7 @@ logger = structlog.get_logger()
 
 
 def create_app(*, max_request_bytes: int = MAX_REQUEST_BYTES) -> FastAPI:
-    # Schema endpoints (/docs, /redoc, /openapi.json) are unconditionally
-    # disabled. There is no production reason to publish the API surface,
-    # and no toggle to forget to flip in deployment.
+    # Schema endpoints disabled — no production reason to publish the surface.
     application = FastAPI(
         title="Malicious Email Scorer",
         docs_url=None,
@@ -26,23 +24,15 @@ def create_app(*, max_request_bytes: int = MAX_REQUEST_BYTES) -> FastAPI:
         openapi_url=None,
     )
 
-    # Middleware registration is LIFO: the LAST @middleware decorator ends up
-    # outermost (runs first on the way in, last on the way out). The intended
-    # execution order is:
-    #   1. _request_context_middleware  — outermost; tags every response with
-    #      a request_id and logs duration, including 411/413 short-circuits
-    #      from the size middleware below.
-    #   2. _enforce_request_size  — innermost user middleware; rejects
-    #      oversized bodies before the route's HMAC dependency reads the body.
+    # LIFO middleware order: _request_context_middleware ends up outermost so
+    # it logs even 411/413 short-circuits from the size middleware below.
 
     @application.middleware("http")
     async def _enforce_request_size(request: Request, call_next) -> Response:  # noqa: ANN001
         """Reject oversized bodies before HMAC reads anything into memory.
 
-        POST must declare a Content-Length so we can fail fast — a missing
-        length is rejected with 411. This rejects chunked POST bodies, which
-        is acceptable here because Apps Script's UrlFetchApp always sets
-        Content-Length."""
+        POST must declare Content-Length; chunked POSTs are rejected with 411.
+        Apps Script's UrlFetchApp always sets Content-Length."""
         if request.method == "POST":
             content_length = request.headers.get("content-length")
             if content_length is None:
