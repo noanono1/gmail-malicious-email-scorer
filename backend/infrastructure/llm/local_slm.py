@@ -53,12 +53,14 @@ class LocalSlm:
             return False
         return response.status_code == 200
 
-    def assess(self, subject: str, body: str) -> LanguageAssessment | None:
+    def assess(
+        self, subject: str, body: str, *, envelope: str | None = None,
+    ) -> LanguageAssessment | None:
         """Classify the email's social-engineering language.
 
         Returns a validated and grounded assessment, or None on any
         transport, parse, schema, or grounding failure."""
-        bundle = build_prompt(subject, body)
+        bundle = build_prompt(subject, body, envelope=envelope)
         raw_response = self._call_ollama(bundle.combined)
         if raw_response is None:
             return None

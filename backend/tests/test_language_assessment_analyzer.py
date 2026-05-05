@@ -33,13 +33,15 @@ class _FakeSlm:
     ) -> None:
         self._available = available
         self._assessment = assessment
-        self.calls: list[tuple[str, str]] = []
+        self.calls: list[tuple[str, str, str | None]] = []
 
     def is_available(self) -> bool:
         return self._available
 
-    def assess(self, subject: str, body: str) -> LanguageAssessment | None:
-        self.calls.append((subject, body))
+    def assess(
+        self, subject: str, body: str, *, envelope: str | None = None,
+    ) -> LanguageAssessment | None:
+        self.calls.append((subject, body, envelope))
         return self._assessment
 
 
@@ -364,3 +366,45 @@ def test_html_entities_are_decoded_before_slm_sees_body() -> None:
     body_passed = slm.calls[0][1]
     assert "&#39;" not in body_passed and "&amp;" not in body_passed
     assert "don't miss" in body_passed and "& sale" in body_passed
+
+
+# ---------------------------------------------------------------------------
+# Envelope — From / To / Authentication-Results travel with the call so the
+# model can weigh urgent language against who is verified to be sending it
+# ---------------------------------------------------------------------------
+
+
+def test_envelope_includes_from_to_and_auth_results_when_present() -> None:
+    slm = _FakeSlm(assessment=_assessment())
+    email = EmailData(
+        message_id="t",
+        sender_address="alerts@accounts.google.com",
+        sender_display_name="Google",
+        recipient="me@example.com",
+        subject="Security alert",
+        body_text="hi",
+        body_html="",
+        headers=EmailHeaders([
+            ("Authentication-Results", "mx.google.com; spf=pass dkim=pass dmarc=pass"),
+        ]),
+    )
+    LanguageAssessmentAnalyzer(slm).analyze(email)
+
+    envelope = slm.calls[0][2]
+    assert envelope is not None
+    assert 'From: "Google" <alerts@accounts.google.com>' in envelope
+    assert "To: me@example.com" in envelope
+    assert "Authentication-Results: mx.google.com; spf=pass dkim=pass dmarc=pass" in envelope
+
+
+def test_envelope_omits_auth_line_when_header_missing() -> None:
+    """No Authentication-Results header → the line is simply absent;
+    From/To still travel, since they are useful even unverified."""
+    slm = _FakeSlm(assessment=_assessment())
+    LanguageAssessmentAnalyzer(slm).analyze(_make_email(body_text="hi"))
+
+    envelope = slm.calls[0][2]
+    assert envelope is not None
+    assert "Authentication-Results" not in envelope
+    assert "From: test@example.com" in envelope
+    assert "To: user@example.com" in envelope

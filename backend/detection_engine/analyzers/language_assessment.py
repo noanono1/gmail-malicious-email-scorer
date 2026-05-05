@@ -107,7 +107,9 @@ def _html_to_plaintext(html_body: str) -> str:
 
 class LlmService(Protocol):
     def is_available(self) -> bool: ...
-    def assess(self, subject: str, body: str) -> LanguageAssessment | None: ...
+    def assess(
+        self, subject: str, body: str, *, envelope: str | None = None,
+    ) -> LanguageAssessment | None: ...
 
 
 class LanguageAssessmentAnalyzer(BaseAnalyzer):
@@ -143,7 +145,9 @@ class LanguageAssessmentAnalyzer(BaseAnalyzer):
                 blind_spots=(LANGUAGE_ASSESSMENT_UNAVAILABLE,),
             )
 
-        assessment = self._llm.assess(email.subject, body)
+        assessment = self._llm.assess(
+            email.subject, body, envelope=_envelope(email),
+        )
         if assessment is None:
             return AnalysisOutput(
                 signals=(),
@@ -163,6 +167,23 @@ class LanguageAssessmentAnalyzer(BaseAnalyzer):
         if email.body_html:
             return _html_to_plaintext(email.body_html)
         return ""
+
+
+def _envelope(email: EmailData) -> str:
+    """Render the trust-relevant headers the model gets above the email
+    content. Authentication-Results is the receiver-signed verdict; From
+    and To are sender-claimed and may be forged. The system prompt tells
+    the model how to weigh that distinction."""
+    sender = (
+        f'"{email.sender_display_name}" <{email.sender_address}>'
+        if email.sender_display_name
+        else email.sender_address
+    )
+    lines = [f"From: {sender}", f"To: {email.recipient}"]
+    auth = email.headers.get("authentication-results")
+    if auth:
+        lines.append(f"Authentication-Results: {auth}")
+    return "\n".join(lines)
 
 
 def _signal_from(assessment: LanguageAssessment) -> Signal | None:
