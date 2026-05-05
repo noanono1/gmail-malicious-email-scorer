@@ -225,9 +225,8 @@ class TestInfrastructureOnlyDampener:
     def test_two_infrastructure_categories_no_critical_dampened(self):
         # SPF softfail (HIGH × 0.7) + Reply-To mismatch (HIGH × 1.0) —
         # both infrastructure, neither at CRITICAL-level contribution.
-        # Without dampener they sum to ~37 × 1.10 = 41 → LIKELY_MALICIOUS.
-        # With dampener: × 0.85 → 35 → still LIKELY_MALICIOUS borderline.
-        # Regardless, dampener must apply.
+        # Dampener must apply; the assertion below derives the exact
+        # expectation from the live scoring constants.
         spf = _signal(SignalSeverity.HIGH, category=SignalCategory.AUTHENTICATION, confidence=0.7)
         sender = _signal(SignalSeverity.HIGH, category=SignalCategory.SENDER_IDENTITY)
         report = score_signals([spf, sender])

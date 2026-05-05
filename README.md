@@ -2,8 +2,6 @@
 
 A Gmail Add-on that analyzes an opened email and produces a maliciousness score with an explainable verdict. The system reports what it checked, what it found, what it couldn't check, and why it reached its conclusion.
 
-<!-- TODO: Add screenshot of the add-on card UI here -->
-
 ---
 
 ## Overview

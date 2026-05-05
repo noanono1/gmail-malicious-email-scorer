@@ -8,10 +8,8 @@ from detection_engine.domain.blind_spot_catalog import ATTACHMENT_CONTENT
 from detection_engine.domain.enums import SignalCategory, SignalSeverity
 from detection_engine.domain.signals import AnalysisOutput, Signal
 
-# TODO: .html/.htm at CRITICAL is debatable — HTML attachments can carry
-# credential-harvesting forms but also appear in legitimate receipts/reports.
-# Options: lower severity, remove (HTML-form analyzer covers the main attack),
-# or keep with a MIME-subtype allowlist.
+# .html/.htm kept at CRITICAL — open decision tracked in
+# docs/detection-policy.md ("Open decision: .html / .htm severity").
 _DANGEROUS_EXTENSIONS: frozenset[str] = frozenset({
     ".exe", ".scr", ".bat", ".cmd", ".ps1", ".vbs", ".js", ".msi",
     ".com", ".pif", ".hta", ".wsf", ".cpl", ".reg",

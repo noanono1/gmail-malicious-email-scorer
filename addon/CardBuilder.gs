@@ -34,11 +34,13 @@ function buildAnalysisCard(result, messageId) {
 
   cardBuilder.addSection(buildVerdictSection(result, verdictStyle));
 
-  if (result.explanation) {
+  var hasFindings = result.top_signals && result.top_signals.length > 0;
+
+  if (result.explanation && !hasFindings) {
     cardBuilder.addSection(buildSummarySection(result.explanation));
   }
 
-  if (result.top_signals && result.top_signals.length > 0) {
+  if (hasFindings) {
     cardBuilder.addSection(buildFindingsSection(result.top_signals));
   }
 
@@ -226,11 +228,7 @@ function buildScopeSection(scope) {
 function formatScopeLines(scope) {
   var lines = [];
 
-  if (scope.analyzers_run.length > 0) {
-    lines.push("Analyzers: " + scope.analyzers_run.join(", "));
-  } else {
-    lines.push("Analyzers: none (skeleton mode)");
-  }
+  lines.push("Analyzers: " + scope.analyzers_run.join(", "));
 
   lines.push(
     "HTML: " + (scope.has_html ? "yes" : "no") +

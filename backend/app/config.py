@@ -39,7 +39,7 @@ RATE_LIMIT_WINDOW_SECONDS: int = _env_int("RATE_LIMIT_WINDOW_SECONDS", default=6
 
 # "local" (Ollama) keeps email content on-host. "openai" sends subjects and
 # bodies to a third-party API — opt-in for development.
-LANGUAGE_PROVIDER: str = os.getenv("LANGUAGE_PROVIDER", "openai").strip().lower()
+LANGUAGE_PROVIDER: str = os.getenv("LANGUAGE_PROVIDER", "local").strip().lower()
 
 LLM_HOST: str = os.getenv("LLM_HOST", "http://localhost:11434")
 LLM_MODEL: str = os.getenv("LLM_MODEL", "gemma:2b")
@@ -48,7 +48,7 @@ LLM_MODEL: str = os.getenv("LLM_MODEL", "gemma:2b")
 LLM_TIMEOUT: int = _env_int("LLM_TIMEOUT", default=8)
 
 OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
-OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-5.2-mini")
+OPENAI_MODEL: str = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 OPENAI_TIMEOUT: int = _env_int("OPENAI_TIMEOUT", default=8)
 
 # Off by default so deployments without a configured SLM provider do not emit
