@@ -128,9 +128,9 @@ These indicators are **structural** — they detect attacker techniques observab
 
 The Language Assessment analyzer (next section) replaces both with a single signal grounded in a verbatim quote.
 
-### LANGUAGE category (semantic, body content)
+### Semantic body analysis (Language Assessment → BODY_CONTENT category)
 
-Language understanding is isolated into one analyzer, gated behind a port (`LlmService`) that any backend implementing `assess(subject, body) -> LanguageAssessment | None` could fulfill. Two providers are wired today: a local Ollama-served SLM (default) and the OpenAI Chat Completions API. Selection is via `LANGUAGE_PROVIDER` (`local` or `openai`); `local` is the default because it keeps email content on the host.
+Language understanding is isolated into one analyzer, gated behind a port (`LlmService`) that any backend implementing `assess(subject, body, *, envelope) -> LanguageAssessment | None` could fulfill. Two providers are wired today: a local Ollama-served SLM (default) and the OpenAI Chat Completions API. Selection is via `LANGUAGE_PROVIDER` (`local` or `openai`); `local` is the default because it keeps email content on the host.
 
 | ID | Indicator | What it detects | Severity | Signal strength | FP risk | Implementation notes |
 |---|---|---|---|---|---|---|
@@ -148,7 +148,7 @@ These indicators examine attachment metadata without opening or executing files.
 |---|---|---|---|---|---|---|
 | **ATTACH-1** | Dangerous file extension | .exe, .scr, .bat, .cmd, .ps1, .vbs, .js, .msi, .com, .pif, .hta, .wsf, .cpl, .reg, .html, .htm | CRITICAL | Very strong — these file types have no legitimate reason to arrive via email in most contexts | Very low | Check attachment filename extension against a curated dangerous-extensions list |
 | **ATTACH-2** | Double extension | `invoice.pdf.exe` — masquerading as a safe file type | CRITICAL | Very strong — always deliberate deception | Very low | Check if filename contains multiple extensions where the final one is dangerous |
-| **ATTACH-3** | Macro-enabled Office format | .docm, .xlsm, .pptm, .dotm, .xltm, .potm — Office files with macros | HIGH | Strong — macro malware is a primary delivery vector | Moderate — some organizations still use macro-enabled templates | Check extension against macro-enabled Office MIME types |
+| **ATTACH-3** | Macro-enabled Office format | .docm, .xlsm, .pptm, .dotm, .xltm, .potm — Office files with macros | HIGH | Strong — macro malware is a primary delivery vector | Moderate — some organizations still use macro-enabled templates | Check extension against macro-enabled Office file extensions |
 | **ATTACH-4** | Password-protected archive | Encrypted .zip/.rar mentioned in body | HIGH | Strong — used to evade scanning | Moderate — legit confidential docs use this too | Check for archive MIME types combined with body text mentioning "password" near attachment references |
 
 #### Open decision: `.html` / `.htm` severity
@@ -304,6 +304,6 @@ Every detection system has known gaps. Ours are modeled as `BlindSpot` domain ob
 | `EMBEDDED_IMAGE` | Email has inline images or image attachments | Image contents were not extracted — any text or QR codes inside images were not read | Emitted by engine |
 | `QR_CODE` | (reserved) | QR codes inside images were not decoded — image processing is out of scope | Defined in the `BlindSpotArea` enum but not emitted yet — image-content inspection (OCR / QR decoding) is a future extension. The `EMBEDDED_IMAGE` blind spot above already covers the user-facing "we did not look inside images" message |
 | `HTML_RENDERING` | Email has HTML body | The message was not rendered as a browser would display it, so CSS- or script-driven content was not evaluated | Emitted by engine |
-| `LANGUAGE_ASSESSMENT` | Language Assessment analyzer is disabled, the local SLM is unreachable, or its response failed schema or evidence-grounding validation | Social-engineering language (paraphrased urgency, credential solicitation, authority impersonation, financial lure) was not assessed for this email | Emitted by LanguageAssessmentAnalyzer |
+| `LANGUAGE_ASSESSMENT` | Language Assessment analyzer is disabled, the local SLM is unreachable, or its response failed schema or evidence-grounding validation | Social-engineering language (paraphrased urgency, credential solicitation, authority impersonation, financial lure) could not be assessed for this email | Emitted by LanguageAssessmentAnalyzer |
 
 Reporting limitations is a deliberate design choice: a verdict of SAFE with three limitations means something different than SAFE with zero. Phrasing them as scope ("what was not done") rather than risk ("what could go wrong") keeps them honest without alarming the user about every email.

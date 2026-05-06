@@ -14,9 +14,9 @@ End-to-end wiring: Gmail Add-on → Backend → hardcoded SAFE → Card UI.
 | Component | Files | What it does |
 |---|---|---|
 | **Gmail Add-on** | `addon/Code.gs`, `EmailExtractor.gs`, `BackendClient.gs`, `CardBuilder.gs` | Extracts email payload (headers, body, attachments), HMAC-signs the request, POSTs to `/analyze`, renders the verdict card |
-| **FastAPI adapter** | `app/main.py`, `routes/analyze.py`, `auth.py`, `config.py`, `schemas.py`, `dependencies.py`, `log_setup.py` | HTTP layer with HMAC auth, Pydantic input validation, structured logging, request middleware |
+| **FastAPI adapter** | `app/main.py`, `routes/analyze.py`, `auth.py`, `config.py`, `schemas.py`, `dependencies.py`, `rate_limit.py`, `log_setup.py` | HTTP layer with HMAC auth, per-IP fixed-window rate limiting, Pydantic input validation, structured logging, request middleware |
 | **Detection engine** | `detection_engine/engine.py`, `scoring.py` | Orchestrator (runs analyzers → scoring → verdict), scoring algorithm (severity points, attenuation, category cap, cross-category boost) |
-| **Domain model** | `detection_engine/domain/` — `email.py`, `enums.py`, `signals.py`, `verdict.py`, `exceptions.py` | Frozen dataclasses: `EmailData`, `EmailHeaders` (case-insensitive, multi-value), `Signal`, `BlindSpot`, `AnalysisOutput`, `AnalysisResult`, `AnalysisScope`. Exception: `AnalyzerCrashed` |
+| **Domain model** | `detection_engine/domain/` — `email.py`, `enums.py`, `signals.py`, `verdict.py`, `exceptions.py`, `blind_spot_catalog.py` | Frozen dataclasses: `EmailData`, `EmailHeaders` (case-insensitive, multi-value), `Signal`, `BlindSpot`, `AnalysisOutput`, `AnalysisResult`, `AnalysisScope`. Exception: `AnalyzerCrashed`. `blind_spot_catalog.py` defines the concrete blind-spot constants and structural predicates |
 | **ABC** | `analyzers/base.py` | `BaseAnalyzer` (pure, offline, deterministic) |
 | **Test suite** | `tests/email_fixtures.py`, `tests/test_tier1_detection.py`, per-analyzer unit + integration tests | ~40 email fixtures with scoring contracts across phishing, BEC, malware, scams, evasion, and legitimate scenarios |
 
@@ -40,7 +40,7 @@ Three analyzers covering the highest-value, lowest-FP-risk deterministic indicat
 |---|---|
 | **File** | `detection_engine/analyzers/authentication.py` |
 | **Category** | AUTHENTICATION |
-| **Signals** | AUTH-1 (SPF fail/none → HIGH), AUTH-2 (DKIM fail/none → HIGH), AUTH-3 (DMARC fail/none → CRITICAL) |
+| **Signals** | AUTH-1 (SPF fail → HIGH, softfail → HIGH @ 0.7, permerror → LOW, none → LOW), AUTH-2 (DKIM fail → HIGH, permerror → LOW, policy → MEDIUM, none → LOW), AUTH-3 (DMARC fail → CRITICAL, permerror → LOW, none → MEDIUM). `none` also emits an AUTHENTICATION_HEADERS blind spot; `temperror` emits a blind spot only |
 | **Input** | `Authentication-Results` header via `email.headers.get()` |
 | **Blind spot** | `AUTHENTICATION_HEADERS` when header is absent |
 
@@ -51,7 +51,7 @@ Three analyzers covering the highest-value, lowest-FP-risk deterministic indicat
 | **File** | `detection_engine/analyzers/sender.py` |
 | **Category** | SENDER_IDENTITY |
 | **Signals** | SENDER-1 (cousin/lookalike domain → CRITICAL), SENDER-3 (From ≠ Reply-To → HIGH), SENDER-4 (Return-Path ≠ From domain → MEDIUM) |
-| **Notes** | Cousin domain: curated brand list, length-scaled Levenshtein budget, visual-substitution normalization (1↔l, 0↔o, 5↔s, rn↔m, vv↔w, cl↔d), trusted-public-suffix allowlist for legitimate regional brand mail. SENDER-3/4 suppress same-org pairs, known ESPs, and freemail→freemail reply-to. Display-name impersonation was prototyped (SENDER-5) and removed — see "Deferred Indicators" in `docs/detection-policy.md`. |
+| **Notes** | Cousin domain: curated brand list, length-scaled Levenshtein budget, visual-substitution normalization (1↔l, 0↔o, 5↔s, rn↔m, vv↔w, cl↔d), trusted-public-suffix allowlist for legitimate regional brand mail. SENDER-3/4 suppress same-org pairs, known ESPs; SENDER-3 additionally suppresses when the sender is a freemail provider (personal mail routinely sets a different reply address). Display-name impersonation was prototyped (SENDER-5) and removed — see "Deferred Indicators" in `docs/detection-policy.md`. |
 
 ### 3. BodyContentAnalyzer (structural)
 
@@ -91,7 +91,7 @@ URL and attachment analysis. Full test suite. All 5 analyzers wired.
 
 - All 5 analyzers wired in `dependencies.py`
 - `config.py` reads `HMAC_SECRET` from environment
-- ~40 email fixtures across 9 test files, ~120 test functions
+- ~40 email fixtures across 21 test files, 1164 tests (unit + integration + scoring + API)
 - Card UI implemented with verdict colors, findings, blind spots, scope, re-analyze button
 
 ---
@@ -130,7 +130,7 @@ Documented for interview discussion ("what would you add next?").
 |---|---|---|---|
 | OCR for image-only phishing | QR codes, image text | High | Requires Tesseract or vision API |
 | Thread awareness | Conversation hijacking, BEC | High | Breaks single-email temporal boundary |
-| AuthorityAlignmentAnalyzer | Cross-check `claimed_authority` (from LanguageAssessment) against sender domain / DKIM / link domains | Medium | The schema already records `claimed_authority`; this analyzer wires it into a deterministic cross-correlation rule |
+| AuthorityAlignmentAnalyzer | Cross-check claimed authority against sender domain / DKIM / link domains | Medium | `claimed_authority` was prototyped in the LanguageAssessment schema and removed (no scoring weight, added prompt surface). Reintroducing it as a targeted extraction — separate from the main assessment — would let a deterministic cross-correlation rule check whether the claimed org matches the sender domain |
 | Multi-language content patterns | Non-English manipulation detection | Medium | The Language Assessment SLM already handles many languages; targeted phrase coverage is a cheaper backstop |
 
 ### External threat intelligence
@@ -147,7 +147,7 @@ Out of scope for this build to keep the system static, deterministic, and free o
 
 | Extension | Value | Complexity | Notes |
 |---|---|---|---|
-| Result caching by message_id | Avoid re-analysis on re-open | Low | Currently stateless by design |
+| Backend result caching by message_id | Avoid re-analysis on re-open at the backend layer | Low | The Gmail Add-on already caches per user via `CacheService.getUserCache()` (120s TTL), avoiding redundant backend calls on re-open. Backend-side caching would extend this across users and survive add-on cache expiry |
 | "Report as phishing" UI action | Corpus building, Gmail spam report | Medium | Forward analysis to Gmail's spam reporting |
 | Production rate limiting | Replace in-process demo counter | Medium | Distributed rate limiting for real deployment |
 | Auto-updating threat lists | Keep brand/TLD/freemail lists current | Medium | Currently static lists |
