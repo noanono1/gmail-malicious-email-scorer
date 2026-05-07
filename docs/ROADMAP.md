@@ -165,11 +165,12 @@ Tier 3 — Language Assessment       ██████████ DONE  (opt-i
 Tier 4 — Future Extensions         ░░░░░░░░░░ OUT OF SCOPE
 ```
 
-### What's next
+### Next priorities
 
-| Item | Status |
-|---|---|
-| `infrastructure/llm/` | Built. Two providers behind `LlmService`: `LocalSlm` (Ollama, default) and `OpenAiLlm` (gpt-4o-mini class). Shared prompt-injection defenses live in `_prompt.py`. |
-| External threat intelligence | Out of scope for this build — see Tier 4 / "External threat intelligence" for the planned shape. |
-| Deploy backend | Railway deployment not yet done. The local provider needs Ollama on the host; the OpenAI provider works anywhere with a key, at the cost of sending content to a third-party API. |
-| Demo emails | Need to send to test Gmail account before interview. |
+Aligned with the README's "What I'd Prioritize Next" section:
+
+1. **Validate scoring against real-world email** — run the engine against a diverse real-world set and verify that verdicts hold.
+2. **Isolated URL destination and reputation analysis** — sandboxed URL fetching to convert the `url_destination` blind spot into a finding.
+3. **Context-aware detection** — thread context (sender frequency, reply-chain integrity) to address conversation hijacking and BEC escalation.
+
+See also Tier 4 for longer-horizon extensions (external threat intelligence, image analysis, production hardening).

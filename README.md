@@ -6,13 +6,13 @@ A Gmail Add-on that analyzes an opened email and produces a maliciousness score 
 
 ## Overview
 
-A thin Apps Script add-on POSTs the open message (HMAC-signed) to a Python backend. The backend runs five deterministic analyzers (authentication, sender, URL, body structure, attachment) plus one schema-constrained semantic analyzer (language assessment), folds their signals into a score with category caps and a cross-category boost, and returns a verdict together with a runtime-generated declaration of what *wasn't* checked. The card renders score, verdict, top signals (each with verbatim evidence), and the limitations.
+A thin Apps Script add-on POSTs the open message (HMAC-signed) to a Python backend. The backend runs five deterministic analyzers (authentication, sender, URL, body structure, attachment) plus one schema-constrained semantic analyzer (language assessment), folds their signals into a score with category caps and a cross-category boost, and returns a verdict together with a runtime-generated declaration of what *wasn't* checked. The card renders score, verdict, top signals (each with verbatim evidence), and limitations.
 
 Three things worth a closer look:
 
-- **Deterministic / semantic seam** — rules where the artifact is structured, one constrained extractor where the artifact is language. The semantic analyzer is severity-capped so a probabilistic verdict can never single-handedly drive `MALICIOUS`. ([Detection Capabilities](#detection-capabilities))
+- **Deterministic / semantic seam** — rules where the artifact is structured, one constrained extractor where the artifact is language. The semantic analyzer is severity-capped so a probabilistic assessment can never single-handedly drive `MALICIOUS`. ([Detection Capabilities](#detection-capabilities))
 - **Limitations as a first-class output** — every result declares the inspection channels it could not use, so a `safe` verdict is never confused with "fully inspected." ([Limitations](#limitations))
-- **Local SLM by design** — the language analyzer runs against a local SLM specifically because email content is attacker-controlled and must not leave the host. An OpenAI implementation also lives behind the same `LlmService` port for development iteration, but it is not a recommended deployment configuration. ([Trade-offs](#trade-offs))
+- **Local SLM by design** — email content is private data that should not leave the host by default. The language analyzer runs against a local Ollama-served SLM so content stays on-premises. An OpenAI implementation also lives behind the same `LlmService` port for development iteration, but it is opt-in — not the default. ([Trade-offs](#trade-offs))
 
 ---
 
@@ -357,7 +357,7 @@ Liveness probe. No authentication, no request body.
 
 ## Detection Capabilities
 
-The engine splits analyzers along a deliberate seam: **rules where the artifact is structured** (headers, addresses, URLs, attachments, HTML structure), **a constrained semantic extractor where the artifact is language**. Linguistic intent is brittle to keyword rules — paraphrased phishing slips through, while legitimate transactional copy false-positives — so language understanding is isolated into one analyzer with a strict schema and grounded-evidence validation.
+The engine splits analyzers along a deliberate seam: **rules where the artifact is structured** (headers, addresses, URLs, attachments, HTML structure), **a constrained semantic extractor where the artifact is language**. Linguistic intent is brittle to keyword rules — paraphrased phishing slips through, while legitimate transactional copy gets flagged — so language understanding is isolated into one analyzer with a strict schema and grounded-evidence validation.
 
 ### Deterministic analyzers
 
@@ -373,7 +373,7 @@ The engine splits analyzers along a deliberate seam: **rules where the artifact 
 
 | Analyzer | Category | Signals |
 |---|---|---|
-| **Language Assessment** | Body content | One `manipulative_language` signal (LOW–HIGH) derived from a structured assessment of the body: requested action, pressure level, claimed authority, manipulation tactics. Runs against a **local SLM (Ollama)** so attacker-controlled email content never leaves the host — that's the design choice, not a tradeoff. The analyzer sits behind an `LlmService` port; an OpenAI implementation also exists in the repo as a development convenience for iterating without a running Ollama, but it is not a recommended deployment configuration (enabling it sends subjects and bodies to a third party). Output is schema-constrained (Pydantic + Ollama `format`) and any non-default finding must include a verbatim evidence quote that grounds in the email source; ungrounded responses are rejected as a blind spot. Severity is capped at HIGH so a probabilistic verdict cannot single-handedly drive an email to MALICIOUS — CRITICAL stays reserved for findings provable from the artifact (cousin domain, HTML form, dangerous extension). Off by default (`LANGUAGE_ANALYZER_ENABLED=false`); when disabled or the local SLM is unreachable, a `language_assessment` blind spot is reported instead. |
+| **Language Assessment** | Body content | One `manipulative_language` signal (LOW–HIGH) derived from a structured assessment of the body: requested action, pressure level, manipulation tactics. Runs against a **local SLM (Ollama)** so email content stays on the host. The analyzer sits behind an `LlmService` port; an OpenAI implementation also exists in the repo as a development convenience for iterating without a running Ollama, but it is not a recommended deployment configuration (enabling it sends subjects and bodies to a third party). Output is schema-constrained (Pydantic + Ollama `format`) and any non-default finding must include a verbatim evidence quote that grounds in the email source; ungrounded responses are rejected as a blind spot. Severity is capped at HIGH so a probabilistic assessment cannot single-handedly drive an email to MALICIOUS — CRITICAL stays reserved for findings provable from the artifact (cousin domain, HTML form, dangerous extension). Off by default (`LANGUAGE_ANALYZER_ENABLED=false`); when disabled or the local SLM is unreachable, a `language_assessment` blind spot is reported instead. |
 
 ### Limitations
 
@@ -388,7 +388,7 @@ Every analysis result includes a limitations section — runtime-generated decla
 | Authentication-Results header absent | "No Authentication-Results header present" | SPF, DKIM, and DMARC were not evaluated for this email |
 | An auth method returned `none` / `temperror` | "`<METHOD>` returned '`<result>`' — verification could not be performed" | The specific authentication method could not be enforced for this email |
 | From address could not be parsed | "From address could not be parsed" | Sender identity checks (cousin domain, reply-to and return-path mismatch) were skipped |
-| Language Assessment analyzer disabled, provider unreachable, or response failed schema/grounding validation | "Language assessment unavailable — local SLM unreachable or its response failed validation" | Social-engineering language (paraphrased urgency, credential solicitation, authority impersonation, financial lure) was not assessed for this email |
+| Language Assessment analyzer disabled, provider unreachable, or response failed schema/grounding validation | "Language assessment unavailable — local SLM unreachable or its response failed validation" | Social-engineering language (paraphrased urgency, credential solicitation, authority impersonation, financial lure) could not be assessed for this email |
 | Always | "Single-email analysis only" | Only this email was analyzed — surrounding thread context was not considered |
 
 This means the result is never just "score: 5, safe" — it includes "…but the PDF attachment was not opened and URL destinations were not fetched," giving the user the scope of the check alongside the verdict.
@@ -446,7 +446,7 @@ Thresholds are calibrated against test cases including both attack patterns and 
 | Secrets | Environment variables via `.env` (backend) and `PropertiesService` (Apps Script). |
 | Data retention | No email content persisted — the backend is stateless by design. The add-on caches the analysis *response* (not the email itself) in `CacheService` for 120 s to avoid redundant backend calls on re-open. |
 | Logging | Analysis metadata only (timing, analyzer names, verdict). Never email content. |
-| Backend access | HMAC-signed requests with a 5-minute timestamp drift bound — stale signatures are rejected, but full nonce-based replay protection (rejecting a captured signature *inside* the drift window) is a deferred item, called out under "Future Improvements." |
+| Backend access | HMAC-signed requests with a 5-minute timestamp drift bound — stale signatures are rejected, but full nonce-based replay protection (rejecting a captured signature *inside* the drift window) is a deferred item, called out under "Future improvements." |
 | Request size | Hard cap on the raw request body (default 1 MiB, configurable). Oversized requests are rejected with 413 before HMAC reads the body. |
 | API schema visibility | `/docs`, `/redoc`, and `/openapi.json` are unconditionally disabled. The API surface is not published. |
 | Rate limiting / DoS | <ul><li>**Per-request bounds:** HMAC, timestamp drift, body-size cap, Pydantic field limits.</li><li>**Per-IP limiter on `/analyze`:** fixed-window (`RATE_LIMIT_PER_WINDOW` / `RATE_LIMIT_WINDOW_SECONDS`, default 60 req / 60 s). Runs *before* HMAC so blocked clients short-circuit before SHA256 reads the body.</li><li>**Scope:** in-process and per-worker — sufficient for the single-uvicorn-worker demo, not durable. Multi-worker or horizontally scaled deployments need a shared store (Redis); volumetric DDoS mitigation belongs at the edge (Cloudflare, Railway, Fly).</li><li>**`X-Forwarded-For` not trusted** — without a known proxy in front, honoring it would let callers spoof their key.</li></ul> |
@@ -470,29 +470,34 @@ Tests do not require a configured `.env` — `tests/conftest.py` seeds a stand-i
 
 ## Trade-offs
 
-**Rules for structure, one constrained extractor for language** — header, address, URL, attachment, and HTML-structure findings are deterministic rules with verbatim evidence. Language understanding is isolated into a single SLM-backed analyzer with a closed-set schema, grounded evidence quotes, and a HIGH severity ceiling, so a probabilistic verdict can amplify but never solely drive a MALICIOUS verdict. Splitting along this seam keeps the system explainable where rules suffice and resilient to paraphrase where they don't.
+Every design choice below closed one door to open another. Each is framed as what was chosen, what that gains, and what it costs.
 
-**Local SLM by design — security choice, not a fallback** — the language analyzer runs against a local Ollama-served SLM specifically because email content is attacker-controlled and must not leave the host. The `LlmService` port also has an OpenAI implementation in the repo, but that exists as a development convenience for iterating on the analyzer without a running Ollama — it is not a recommended runtime configuration, since enabling it sends subjects and bodies to a third party. Both implementations share the same prompt-injection defenses (per-request random delimiter, Unicode hygiene, schema-strict parsing, evidence grounding) and the same blind-spot fallback when the backend is unreachable. Grammar-constrained decoding (`format` for Ollama, `response_format` for OpenAI) keeps outputs inside the closed-set schema. Neither provider pins `temperature` — newer reasoning-class OpenAI models reject non-default values, so the two stay symmetric on this point.
+**Thin add-on / thick backend vs. all logic in Apps Script** — all detection logic lives in the Python backend; the Apps Script add-on only extracts, forwards, and renders. `Gain:`  the detection engine is a testable, deployable Python library independent of Google's Apps Script runtime — it can be unit-tested, versioned, and reused outside Gmail. `Cost:`  every analysis requires a network round-trip to the backend, so latency depends on the backend host and availability.
 
-**Static analysis over dynamic** — URLs are pattern-matched but never fetched. Cannot detect redirect chains or cloaked pages, but eliminates SSRF and data exfiltration risks from outbound connections to attacker infrastructure.
+**Deterministic rules for structure, one constrained SLM for language** — headers, addresses, URLs, attachments, and HTML structure are analyzed by deterministic rule-based analyzers with verbatim evidence. Language understanding is isolated into a single SLM-backed analyzer with a closed-set schema, grounded evidence quotes, and a HIGH severity ceiling, so a probabilistic assessment can amplify but never solely drive a MALICIOUS verdict. `Gain:`  the system is explainable and reproducible where structure is enough, and resilient to paraphrase where it isn't. `Cost:`  the language analyzer introduces a model dependency (Ollama) and non-deterministic outputs; its severity cap limits how much it can influence the final score.
 
-**Single-email over contextual** — each email is analyzed in isolation. Cannot detect behavioral anomalies or thread-based attacks, but requires no database, no user profiles, and raises no privacy concerns from stored history.
+**Local SLM vs. hosted model** — the language analyzer defaults to a local Ollama-served SLM rather than a cloud API. `Gain:`  email bodies — private data — never leave the host. No third-party data processing, no API keys to manage in production. `Cost:`  the user must install and run Ollama locally, model quality is bounded by what fits on the host GPU/CPU, and there is no cloud-scale throughput. An OpenAI implementation exists in the repo as a development convenience for prompt iteration, but it is opt-in since enabling it sends subjects and bodies to a third party. Both implementations share identical prompt-injection defenses (per-request random delimiter, Unicode hygiene, schema-strict parsing, evidence grounding) — email content is attacker-controlled regardless of where the model runs.
 
-**Conservative over aggressive** — tuned to keep legitimate transactional and marketing emails below the suspicious threshold. A missed phishing email is costly, but an inbox of false alarms trains users to ignore the tool.
+**Static analysis vs. dynamic enrichment** — URLs are pattern-matched but never fetched; attachments are classified by extension and name, never executed. `Gain:`  no outbound connections to attacker infrastructure (eliminates SSRF and data-exfiltration from URL fetching) and no code execution (eliminates sandbox-escape from attachment detonation). `Cost:`  cannot detect redirect chains, cloaked landing pages, or weaponized payloads — attacks that look benign until you follow the link or open the file.
+
+**Single-email vs. contextual analysis** — each email is analyzed in complete isolation; no thread history, no sender profiles, no stored state. `Gain:`  no database, no user data retention, no privacy concerns from accumulated history, and trivially parallelizable. `Cost:`  cannot detect conversation hijacking, behavioral anomalies, or multi-stage campaigns where the first email is clean.
+
+**Fewer false alarms vs. catching every threat** — scoring thresholds are tuned to keep legitimate transactional and marketing emails below the suspicious threshold, accepting that some marginal attacks may score lower than they should. A security tool arguably *should* prefer false positives over false negatives — better to warn about a safe email than miss a real threat. The counter-argument, and the reason we lean this way: an inbox full of false alarms trains users to ignore the tool entirely, which defeats its purpose when a real threat arrives. `Cost:`  subtle attacks near the decision boundary may not trigger a warning. Verdict thresholds in `scoring.py` can be shifted once validated against a broader real-world email set.
+
+**Policy-driven scoring vs. trained ML classifier** — signals are combined by a hand-authored formula (severity points, category caps, cross-category boost, dampeners) rather than a learned model. `Gain:`  every score is fully explainable — you can trace exactly which signals contributed how many points and why. No training data, no labeling pipeline, no cold-start problem. `Cost:`  the formula cannot discover patterns the author didn't anticipate; adjusting thresholds requires manual analysis rather than fitting to data. The architecture is designed so this can evolve: signals are features, and `scoring.py` is a swappable combination function.
 
 ---
 
 ## Out of Scope
 
-| Attack Vector | Reason |
-|---|---|
-| Conversation hijacking | Requires thread history; single-email analysis only |
-| Multi-stage attacks | First email is typically clean; requires session state |
-| Delayed detonation URLs | Safe at scan time, weaponized later; needs re-scanning infrastructure |
-| Zero-day attachment exploits | Requires sandbox execution |
-| Compromised legitimate accounts | Authentication passes; requires behavioral analysis over time |
-| QR code / image-only phishing | Requires OCR/vision capabilities |
-| Obfuscated HTML (CSS-hidden text, base64 sections, data: URI inlining) | Requires HTML rendering or deep heuristics; deliberately deferred to keep deterministic analyzers explainable. See `docs/detection-policy.md` "Deferred Indicators" |
+| Missing Capability | What It Would Catch | Why It's Out |
+|---|---|---|
+| Dynamic URL destination analysis | Redirect chains, cloaked landing pages, shortened-URL payloads | Requires outbound fetching — introduces SSRF and data-exfiltration surface |
+| External reputation / threat intelligence | Known-malicious domains, IPs, and file hashes (Safe Browsing, VirusTotal, WHOIS age) | Adds third-party API dependencies, rate limits, and latency; keeps the system static and self-contained for now |
+| Attachment content inspection | Zero-day exploits, macro payloads, weaponized documents | Requires sandbox execution; static extension/name checks are the current boundary |
+| Rendered / visual content analysis | QR-code phishing, image-only emails, CSS-hidden text, obfuscated HTML | Requires OCR/vision or a rendering engine; deliberately deferred to keep analyzers deterministic and explainable |
+| Thread / account / org context | Conversation hijacking, BEC escalation, compromised legitimate accounts, multi-stage campaigns | Requires stored history and user profiles — conflicts with the stateless, single-email, no-data-retention model |
+| Delayed / time-shifting attacks | URLs safe at scan time but weaponized later, timed payload detonation | Requires re-scanning infrastructure and persistent state |
 
 ---
 
@@ -500,15 +505,13 @@ Tests do not require a configured `.env` — `tests/conftest.py` seeds a stand-i
 
 If I had another week, in order:
 
-1. **Ground-truth calibration over a labeled corpus.** The scoring constants and verdict thresholds are reasoned — base points per severity, attenuation rate, category cap, cross-category boost — and validated against curated test cases. The next move is to tune them against a labeled real-world set (mixed phishing, BEC, transactional, marketing, internal) and pick thresholds that hit explicit precision/recall targets, not thresholds I picked. Single highest-leverage change for verdict quality.
-2. **Closed-loop URL verification in an isolated sandbox.** The static URL analyzer flags structure (IP literals, anchor/href mismatch, dangerous schemes) but cannot follow redirects or verify destinations — currently declared as the `url_destination` blind spot. A sandboxed fetcher with separate network egress, no cookies, and no credentials, paired with the existing static signals, would convert a known blind spot into a finding while preserving the no-outbound-from-app guarantee.
-3. **Production-grade rate limiting + edge throttling.** The in-process per-IP fixed-window limiter is honest-but-bounded: per-worker state, no horizontal scaling, no volumetric DDoS coverage. A Redis-backed limiter behind the FastAPI app plus a platform-edge throttle (Cloudflare / Railway / Fly) closes the gap without changing application logic.
+1. **Validate scoring against real-world email.** The scoring formula and verdict thresholds are validated against ~40 curated test fixtures. The next step is to run the engine against a diverse real-world set (phishing, BEC, transactional, marketing, internal) and verify that verdicts hold — adjusting thresholds where they don't. Single highest-leverage change for verdict quality.
+2. **Isolated URL destination and reputation analysis.** The static URL analyzer flags structure (IP literals, anchor/href mismatch, dangerous schemes) but cannot follow redirects or verify destinations — currently declared as the `url_destination` blind spot. A sandboxed fetcher with separate network egress, no cookies, and no credentials, paired with the existing static signals, would convert a known blind spot into a finding while preserving the no-outbound-from-app guarantee.
+3. **Context-aware detection for thread and account attacks.** The current single-email-in-isolation model cannot detect conversation hijacking, BEC escalation across a thread, or behavioral anomalies from a compromised legitimate account. Adding thread context (previous messages, sender frequency, reply-chain integrity) would close the largest class of attacks listed in Out of Scope — a sliding window over recent messages from the same sender could cover the most common patterns without requiring full mailbox access.
 
 ### Future improvements
 
 - **External threat intelligence** — wire in network-backed lookups (Google Safe Browsing for URL reputation, WHOIS/RDAP for domain age, VirusTotal/AbuseIPDB for hash reputation). Out of scope for this build to keep the system static, deterministic, and free of third-party dependencies, but a natural next layer once those tradeoffs are acceptable.
 - **Image analysis** — OCR for QR code phishing and image-only emails
-- **Thread awareness** — conversation context for detecting hijacking and BEC patterns
-- **Feedback loop** — user reporting of false positives/negatives for threshold tuning
-- **Distributed rate limiting** — replace the in-process per-IP fixed-window limiter with a shared-store implementation (Redis) that survives multiple workers and instances, and front the API with edge throttling at the platform layer (Cloudflare, Railway, Fly) for volumetric DDoS coverage.
-- **Nonce-based replay protection** — today the HMAC layer rejects signatures whose timestamp falls outside a 5-minute drift window, but does not deduplicate signatures within that window. A captured request can be replayed up to 300 s after it was first sent. The fix is small (a per-process LRU of recently accepted `(timestamp, signature)` tuples, or a per-request nonce header), and the existing tests already cover the drift bound — adding a replay-rejection test alongside is the natural extension.
+- **Feedback loop** — user reporting of false positives/negatives to validate and adjust scoring thresholds
+- **Production hardening** — distributed rate limiting (Redis-backed, edge throttling), nonce-based replay protection, deployment observability, and multi-instance-safe state

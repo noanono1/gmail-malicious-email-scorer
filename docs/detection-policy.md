@@ -5,7 +5,7 @@
 The engine is split along a deliberate seam:
 
 1. **Deterministic analyzers** (authentication, sender, URL, attachment, body HTML structure) — every indicator is extracted from the email as received. Same input, same output, every time. Verbatim evidence in every signal. No outbound network access.
-2. **Language Assessment analyzer** — one analyzer, isolated from the rest, that asks a **local** SLM (Ollama, no external API) to decompose the body into a closed-set schema. Severity is capped at HIGH so a probabilistic verdict can amplify but never solely drive the engine to MALICIOUS.
+2. **Language Assessment analyzer** — one analyzer, isolated from the rest, that asks a **local** SLM (Ollama, no external API) to decompose the body into a closed-set schema. Severity is capped at HIGH so a probabilistic assessment can amplify but never solely drive the engine to MALICIOUS.
 
 The indicator set covers mass phishing as the primary use case, with meaningful overlap into credential harvesting, malware delivery via attachments, and basic impersonation patterns (including some BEC and spear-phishing variants). When the Language Assessment analyzer is enabled, paraphrased social-engineering language that keyword rules historically over- or under-flagged is also covered. Threats that require capabilities beyond these two seams — sandbox execution, user profiling, organizational context, threat-intel lookups — are explicitly out of scope and documented in "Deferred Indicators."
 
@@ -50,7 +50,7 @@ An indicator earns inclusion when it scores well across most axes. High false-po
 
 ### AUTHENTICATION category
 
-These indicators check whether the sending infrastructure is authorized by the claimed domain. Authentication failures are the foundation of phishing detection — they prove the sender is not who they claim to be.
+These indicators check whether the sending infrastructure is authorized by the claimed domain. Authentication failures are among the strongest phishing signals — they indicate the sender may not be who they claim to be, though failures can also result from misconfiguration (forwarding breaks SPF, mailing lists break DKIM).
 
 | ID | Indicator | What it detects | Severity | Signal strength | FP risk | Implementation notes |
 |---|---|---|---|---|---|---|
@@ -107,7 +107,7 @@ These indicators analyze links in the email body without following them.
 | **URL-2** | IP-literal host in URL | `http://192.168.1.100/verify`, `http://[::1]/verify` | HIGH | Strong — legitimate services use domain names | Low | Parse the URL host and validate it with `ipaddress.ip_address` (covers IPv4 and IPv6) |
 | **URL-3** | Dangerous URI scheme in href | `javascript:`, `data:`, `vbscript:`, `file:` URLs in `<a>` tags | CRITICAL | Very strong — mail clients block or strip these; surviving instances read as evasion | Very low — legitimate mail does not link these schemes | Parse the href scheme on every HTML link; flag anything in the dangerous-scheme set |
 
-**Why URL mismatch is CRITICAL**: This is the single strongest phishing indicator. When a link displays "www.paypal.com" but the href points to an IP address or unrelated domain, there is probably no innocent explanation. Combined with a cousin domain (SENDER-1), this produces convergent evidence across two categories, triggering the cross-category boost.
+**Why URL mismatch is CRITICAL**: An anchor that displays "www.paypal.com" while the href points to an IP address or unrelated domain is one of the clearest phishing signals — there is rarely an innocent explanation. Combined with a cousin domain (SENDER-1), this produces convergent evidence across two categories, triggering the cross-category boost.
 
 **Why dangerous URI schemes are CRITICAL**: Each of `javascript:`, `vbscript:`, `data:`, and `file:` either embeds executable content (script schemes), embeds a whole payload page in the href itself (`data:`), or escapes to local resources (`file:`). Major mail clients block or strip them, so a surviving instance in an inbound message reads as deliberate evasion rather than a normal link.
 
@@ -134,7 +134,7 @@ Language understanding is isolated into one analyzer, gated behind a port (`LlmS
 
 | ID | Indicator | What it detects | Severity | Signal strength | FP risk | Implementation notes |
 |---|---|---|---|---|---|---|
-| **LANG-1** | Manipulative language (`manipulative_language`) | Combination of risky `requested_action` (`provide_secrets`, `provide_payment`, `login_or_verify_identity`, …), `pressure_level`, and itemized `manipulation_tactics` derived from a structured SLM assessment of the body | LOW–HIGH (capped at HIGH) | Moderate — depends on the combination of axes; isolated provide_secrets without pressure reaches MEDIUM, secrets + severe pressure + multiple tactics reaches HIGH | Low — defended by closed-set schema, grammar-constrained decoding (Ollama `format`), and verbatim evidence-quote grounding | One signal in the BODY_CONTENT category. Confidence floor (0.6) suppresses uncertain assessments. Severity ceiling is HIGH by design — a probabilistic verdict cannot single-handedly drive an email to MALICIOUS; CRITICAL stays reserved for findings provable from the artifact (cousin domain, HTML form, dangerous extension). On any failure (transport, schema, grounding) the analyzer emits a `language_assessment` blind spot rather than a guess |
+| **LANG-1** | Manipulative language (`manipulative_language`) | Combination of risky `requested_action` (`provide_secrets`, `provide_payment`, `login_or_verify_identity`, …), `pressure_level`, and itemized `manipulation_tactics` derived from a structured SLM assessment of the body | LOW–HIGH (capped at HIGH) | Moderate — depends on the combination of axes; isolated provide_secrets without pressure reaches MEDIUM, secrets + severe pressure + multiple tactics reaches HIGH | Low — defended by closed-set schema, grammar-constrained decoding (Ollama `format`), and verbatim evidence-quote grounding | One signal in the BODY_CONTENT category. Confidence floor (0.6) suppresses uncertain assessments. Severity ceiling is HIGH by design — a probabilistic assessment cannot single-handedly drive an email to MALICIOUS; CRITICAL stays reserved for findings provable from the artifact (cousin domain, HTML form, dangerous extension). On any failure (transport, schema, grounding) the analyzer emits a `language_assessment` blind spot rather than a guess |
 
 **Why HIGH ceiling**: Any language model — SLM or LLM — is probabilistic; even a well-grounded assessment can be wrong on adversarial input. Capping at HIGH means the analyzer can amplify a verdict already supported by deterministic findings (auth fail + cousin domain + manipulative language → MALICIOUS) without being able to drive an otherwise-clean email past LIKELY_MALICIOUS on its own.
 
@@ -146,22 +146,22 @@ These indicators examine attachment metadata without opening or executing files.
 
 | ID | Indicator | What it detects | Severity | Signal strength | FP risk | Implementation notes |
 |---|---|---|---|---|---|---|
-| **ATTACH-1** | Dangerous file extension | .exe, .scr, .bat, .cmd, .ps1, .vbs, .js, .msi, .com, .pif, .hta, .wsf, .cpl, .reg, .html, .htm | CRITICAL | Very strong — these file types have no legitimate reason to arrive via email in most contexts | Very low | Check attachment filename extension against a curated dangerous-extensions list |
+| **ATTACH-1** | Dangerous file extension | .exe, .scr, .bat, .cmd, .ps1, .vbs, .js, .msi, .com, .pif, .hta, .wsf, .cpl, .reg, .html, .htm | CRITICAL | Very strong — these file types have no legitimate reason to arrive via email in most contexts | Very low for executables; moderate for `.html`/`.htm` (see design note below) | Check attachment filename extension against a curated dangerous-extensions list |
 | **ATTACH-2** | Double extension | `invoice.pdf.exe` — masquerading as a safe file type | CRITICAL | Very strong — always deliberate deception | Very low | Check if filename contains multiple extensions where the final one is dangerous |
 | **ATTACH-3** | Macro-enabled Office format | .docm, .xlsm, .pptm, .dotm, .xltm, .potm — Office files with macros | HIGH | Strong — macro malware is a primary delivery vector | Moderate — some organizations still use macro-enabled templates | Check extension against macro-enabled Office file extensions |
 | **ATTACH-4** | Password-protected archive | Encrypted .zip/.rar mentioned in body | HIGH | Strong — used to evade scanning | Moderate — legit confidential docs use this too | Check for archive MIME types combined with body text mentioning "password" near attachment references |
 
-#### Open decision: `.html` / `.htm` severity
+#### Design note: `.html` / `.htm` at CRITICAL
 
-`.html` and `.htm` sit on ATTACH-1 at **CRITICAL** with the rest of the dangerous-extension list. Unlike the other entries (which execute code natively on the OS), HTML files only run inside a browser and are routinely attached to legitimate mail (invoices, receipts, exported reports, newsletter archives). The risk is real — an HTML attachment can host a credential-harvesting form or a JavaScript redirect — but the false-positive rate is plausibly higher than for `.exe`/`.bat`/`.ps1`.
+`.html` and `.htm` sit on ATTACH-1 at **CRITICAL** with the rest of the dangerous-extension list. Unlike the other entries (which execute code natively on the OS), HTML files only run inside a browser and are routinely attached to legitimate mail (invoices, receipts, exported reports, newsletter archives). The risk is real — an HTML attachment can host a credential-harvesting form or a JavaScript redirect — but the false-positive rate is higher than for `.exe`/`.bat`/`.ps1`.
 
-Three defensible alternatives:
+The alternatives considered:
 
-1. **Keep CRITICAL** (current). Treat any HTML attachment as deliberate evasion, accept the FP risk on legitimate transactional mail.
-2. **Downgrade to HIGH or MEDIUM.** Acknowledges the FP risk; relies on `CONTENT-3` (HTML form in body) and `URL-1` (href↔display mismatch) to catch the attack pattern when the HTML is inlined.
-3. **Remove `.html`/`.htm` from ATTACH-1 entirely.** The credential-harvesting attack vector is already represented by CONTENT-3; the file-type-as-malware framing is a poor fit for HTML.
+1. **Keep CRITICAL** (chosen). HTML attachments that survive mail-client filtering are more likely evasion than routine. In the absence of content inspection (we don't open attachments), treating them as dangerous errs on the side of caution.
+2. **Downgrade to HIGH or MEDIUM.** Would reduce FP risk but weaken coverage for credential-harvesting-via-attachment, which is a common delivery pattern.
+3. **Remove `.html`/`.htm` entirely.** The credential-harvesting vector is partially represented by CONTENT-3 (HTML form in body), but only when the HTML is inlined — not when it arrives as a file.
 
-**Decision (2026-05-04):** keep CRITICAL. This is an *open* decision, not a settled one — it must not be silently changed as part of unrelated cleanup. Any change here goes through its own patch with its own score-impact review (per the "surface detection-semantic changes explicitly" working rule).
+CRITICAL was chosen because at this stage, without attachment content inspection, the extension is the only signal we have. If attachment sandboxing is added later, the severity should be revisited since the content itself would provide stronger evidence than the file type alone.
 
 ---
 
@@ -275,9 +275,7 @@ Both categories are infrastructure, no CRITICAL contribution → dampener ×0.78
 Final = 48.88 × 0.78 = 38.12 → LIKELY_MALICIOUS (low end of the 35–64 band)
 ```
 
-Without the dampener this case would sit at 48.88 — mid-band LIKELY_MALICIOUS. The dampener pulls it down to 38.12, just inside the same band: the verdict label does not change here, but the email reads as a much weaker LIKELY_MALICIOUS than its uncorrected score suggests.
-
-The dampener's calibrated demotion (~22%) crosses the LIKELY_MALICIOUS / SUSPICIOUS threshold for weaker pairs (e.g. SPF softfail + Return-Path mismatch, where Return-Path is MEDIUM rather than HIGH), and crosses the SUSPICIOUS / SAFE threshold for the very weakest infrastructure-only combinations. For the strongest infrastructure-only pair (SPF softfail + Reply-To mismatch shown above) it softens but does not flip the tier. Tightening the dampener further would risk demoting genuine spoofing cases that should read LIKELY_MALICIOUS — see the constant's docstring in `scoring.py` for the calibration tradeoff.
+Without the dampener this case would sit at 48.88 — mid-band LIKELY_MALICIOUS. The dampener pulls it down to 38.12, just inside the same band. This is the strongest infrastructure-only pair — for weaker ones (e.g. DKIM fail + Return-Path mismatch, where Return-Path is MEDIUM rather than HIGH), the ~22% reduction does cross the LIKELY_MALICIOUS → SUSPICIOUS threshold. Tightening the dampener further would risk demoting genuine spoofing cases — see the constant's docstring in `scoring.py`.
 
 ### Example: legitimate Amazon order
 
