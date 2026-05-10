@@ -1,39 +1,38 @@
 from __future__ import annotations
 
 import time
-from threading import Lock
-
 from fastapi import HTTPException, Request
 
 from app.config import RATE_LIMIT_PER_WINDOW, RATE_LIMIT_WINDOW_SECONDS
 
 
 class FixedWindowLimiter:
-    """In-process per-key fixed-window counter.
+    """Counts requests per IP within a fixed time window (in-memory dict).
 
-    Single-worker only — multi-worker deployments would silently undercount
-    and need a shared store (Redis). Not a WAF substitute: memory grows with
-    distinct keys per window."""
+    Assumes a single uvicorn worker — multiple workers each keep a separate
+    counter, so the effective limit multiplies by worker count.
+    Does not block traffic before it reaches the server — it only rejects
+    requests after they arrive. Stale IP entries are never evicted."""
 
     def __init__(self, *, limit: int, window_seconds: int) -> None:
         self._limit = limit
         self._window_seconds = window_seconds
-        self._windows: dict[str, tuple[float, int]] = {}
-        self._lock = Lock()
+        # {"192.168.1.1": (window_start_timestamp, request_count)}
+        # e.g. {"34.90.0.5": (173204.7, 12), "91.2.3.4": (173210.1, 3)}
+        self._hits_per_ip: dict[str, tuple[float, int]] = {}
 
     def hit(self, key: str) -> tuple[bool, int]:
-        """Record a hit for *key*. Returns (allowed, retry_after_seconds)."""
+        """Returns (allowed, retry_after_seconds) for the given IP."""
         now = time.monotonic()
-        with self._lock:
-            window_start, count = self._windows.get(key, (now, 0))
-            if now - window_start >= self._window_seconds:
-                window_start, count = now, 0
-            count += 1
-            self._windows[key] = (window_start, count)
-            if count > self._limit:
-                retry_after = self._window_seconds - (now - window_start)
-                return False, max(int(retry_after), 1)
-            return True, 0
+        window_start, count = self._hits_per_ip.get(key, (now, 0))
+        if now - window_start >= self._window_seconds:
+            window_start, count = now, 0
+        count += 1
+        self._hits_per_ip[key] = (window_start, count)
+        if count > self._limit:
+            retry_after = self._window_seconds - (now - window_start)
+            return False, max(int(retry_after), 1)
+        return True, 0
 
 
 _limiter = FixedWindowLimiter(

@@ -36,6 +36,8 @@ function extractEmailData(messageId) {
  * user@example.com                  → { address, displayName: "" }
  */
 function parseFromField(rawFrom) {
+// getFrom() returns the raw RFC 2822 header, not a plain address —
+// it can be either "user@example.com" or '"Display Name" <user@example.com>'.
   var match = rawFrom.match(/<([^>]+)>/);
   if (match) {
     var address = match[1];

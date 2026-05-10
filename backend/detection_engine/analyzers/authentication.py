@@ -105,7 +105,7 @@ class AuthenticationAnalyzer(BaseAnalyzer):
     ) -> dict[_AuthMethod, str]:
         """Parse Authentication-Results headers into a {method: result} map.
 
-        First occurrence wins: the trusted receiving MTA prepends its own
+        First occurrence wins: the trusted receiving MTA (Mail Transfer Agent, like Gmail) prepends its own
         header; later headers from upstream relays cannot be trusted.
         """
         results: dict[_AuthMethod, str] = {}

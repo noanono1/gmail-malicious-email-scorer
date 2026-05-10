@@ -38,17 +38,18 @@ against labeled fixtures: 0.10 left multi-category malicious cases short of
 the MALICIOUS threshold; 0.15 widens the gap between depth-penalty and
 breadth-reward, which is what we want."""
 
-# Infrastructure/spoofing categories. When ONLY these fire (no CRITICAL among
-# them), the email reads as "infrastructure unsettled" rather than "attack
-# detected" — without this dampener the cross-category sum can inflate that
-# into LIKELY_MALICIOUS. URL/BODY/ATTACHMENT signals override the dampener.
-_INFRASTRUCTURE_CATEGORIES: frozenset[SignalCategory] = frozenset({
+# Correlated categories — these probe the same underlying question ("is the
+# sender legitimate?") from different angles, so co-firing is expected and
+# the cross-category boost overstates independence.  URL/BODY/ATTACHMENT
+# signals override the dampener because they represent genuinely orthogonal
+# evidence.
+_CORRELATED_CATEGORIES: frozenset[SignalCategory] = frozenset({
     SignalCategory.AUTHENTICATION,
     SignalCategory.SENDER_IDENTITY,
 })
 
-INFRASTRUCTURE_ONLY_DAMPENER: float = 0.78
-"""Applied when ≥2 infrastructure categories fire and none clears CRITICAL.
+CORRELATION_DAMPENER: float = 0.78
+"""Applied when ≥2 correlated categories fire and none clears CRITICAL.
 Empirical: 0.85 leaves softfail+mismatch above the LIKELY_MALICIOUS threshold;
 0.65 demotes genuine spoofing patterns that should read LIKELY_MALICIOUS."""
 
@@ -91,7 +92,7 @@ def score_signals(signals: Sequence[Signal]) -> ScoringReport:
     )
     multiplier = (
         1.0 + CROSS_CATEGORY_BOOST * max(0, len(active_categories) - 1)
-    ) * _infrastructure_only_factor(category_totals, active_categories)
+    ) * _correlated_only_factor(category_totals, active_categories)
     final_score = max(0.0, min(raw_total * multiplier, 100.0))
 
     scored_signals = tuple(
@@ -153,18 +154,18 @@ def _category_totals(
     return totals
 
 
-def _infrastructure_only_factor(
+def _correlated_only_factor(
     category_totals: dict[SignalCategory, float],
     active_categories: frozenset[SignalCategory],
 ) -> float:
     if len(active_categories) < 2:
         return 1.0
-    if not active_categories.issubset(_INFRASTRUCTURE_CATEGORIES):
+    if not active_categories.issubset(_CORRELATED_CATEGORIES):
         return 1.0
     decisive = SEVERITY_POINTS[SignalSeverity.CRITICAL]
     if any(total >= decisive for total in category_totals.values()):
         return 1.0
-    return INFRASTRUCTURE_ONLY_DAMPENER
+    return CORRELATION_DAMPENER
 
 
 def _base_points(signal: Signal) -> float:

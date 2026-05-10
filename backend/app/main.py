@@ -28,7 +28,7 @@ def create_app(*, max_request_bytes: int = MAX_REQUEST_BYTES) -> FastAPI:
     # it logs even 411/413 short-circuits from the size middleware below.
 
     @application.middleware("http")
-    async def _enforce_request_size(request: Request, call_next) -> Response:  # noqa: ANN001
+    async def _enforce_request_size(request: Request, call_next) -> Response:
         """Reject oversized bodies before HMAC reads anything into memory.
 
         POST must declare Content-Length; chunked POSTs are rejected with 411.

@@ -18,7 +18,8 @@ from detection_engine.utils.typosquat import (
 )
 
 # Brand → legitimate domains owned by that brand. Built-in catalog for
-# deterministic demo detection; production would source from external intel.
+# deterministic demo detection; production would source from external intel
+# (like PhishTank, APWG eCrime feed, or a managed brand-protection service)
 _BRAND_DOMAINS: dict[str, frozenset[str]] = {
     "paypal": frozenset({"paypal.com"}),
     "amazon": frozenset({"amazon.com", "amazon.co.uk", "amazon.de", "amazon.co.jp"}),
@@ -64,7 +65,7 @@ _FREEMAIL_DOMAINS: frozenset[str] = frozenset({
     "tutanota.com", "fastmail.com",
 })
 
-# ESPs that legitimately appear in Reply-To/Return-Path for brand mail.
+# ESPs (Email Service Providers) that legitimately appear in Reply-To/Return-Path for brand mail.
 _ESP_DOMAINS: frozenset[str] = frozenset({
     "sendgrid.net", "amazonses.com", "mailchimp.com", "mandrillapp.com",
     "mailgun.org", "postmarkapp.com", "sparkpostmail.com",

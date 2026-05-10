@@ -11,7 +11,7 @@ from detection_engine.domain.signals import Signal
 from detection_engine.scoring import (
     CATEGORY_CAP,
     CROSS_CATEGORY_BOOST,
-    INFRASTRUCTURE_ONLY_DAMPENER,
+    CORRELATION_DAMPENER,
     SEVERITY_POINTS,
     WITHIN_CATEGORY_ATTENUATION,
     classify_verdict,
@@ -234,7 +234,7 @@ class TestInfrastructureOnlyDampener:
         spf_pts = SEVERITY_POINTS[SignalSeverity.HIGH] * 0.7
         sender_pts = SEVERITY_POINTS[SignalSeverity.HIGH]
         raw = spf_pts + sender_pts
-        expected = raw * (1.0 + CROSS_CATEGORY_BOOST) * INFRASTRUCTURE_ONLY_DAMPENER
+        expected = raw * (1.0 + CROSS_CATEGORY_BOOST) * CORRELATION_DAMPENER
         assert report.final_score == pytest.approx(expected)
 
     def test_decisive_infrastructure_signal_disables_dampener(self):

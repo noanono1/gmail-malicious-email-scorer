@@ -15,7 +15,6 @@ import tldextract
 
 _extractor = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=False)
 
-
 def email_domain(address: str) -> str | None:
     """Lower-cased domain part of an email address, or None if missing.
 
