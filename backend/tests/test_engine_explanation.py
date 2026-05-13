@@ -115,13 +115,11 @@ class TestExplanationCategoryCount:
         assert "Evidence spans 4 categories." in result.explanation
 
 
-class TestVerdictFloorOnInspectionGap:
-    """When the language analyzer cannot run, an email with zero signals
-    must not be reported as SAFE — the body was never assessed at all.
-    The floor routes to INCONCLUSIVE rather than SUSPICIOUS so a score
-    of 0 alongside the verdict reads as 'not scored', not as a bug."""
+class TestLanguageAssessmentUnavailable:
+    """When the language analyzer cannot run, the blind spot is reported
+    but the verdict stays SAFE if no signals fired."""
 
-    def test_language_assessment_blind_spot_floors_safe_to_inconclusive(self):
+    def test_language_assessment_blind_spot_stays_safe(self):
         engine = DetectionEngine(
             analyzers=[_FakeAnalyzer(
                 "fake", signals=(), blind_spots=(LANGUAGE_ASSESSMENT_UNAVAILABLE,),
@@ -129,33 +127,6 @@ class TestVerdictFloorOnInspectionGap:
         )
         result = engine.analyze(_empty_email())
 
-        assert result.verdict == Verdict.INCONCLUSIVE
+        assert result.verdict == Verdict.SAFE
         assert result.score == 0
         assert "could not be inspected" in result.explanation
-        assert "not enough coverage to judge" in result.explanation
-
-    def test_routine_blind_spots_alone_do_not_floor_verdict(self):
-        # Empty engine still emits the structural THREAD_HISTORY blind
-        # spot. That alone (no LANGUAGE_ASSESSMENT) must keep verdict SAFE.
-        engine = DetectionEngine(analyzers=[])
-        result = engine.analyze(_empty_email())
-
-        assert result.verdict == Verdict.SAFE
-        assert "No threat signals detected" in result.explanation
-
-    def test_floor_does_not_downgrade_existing_signal_verdict(self):
-        # When real signals fire, the floor must not touch the verdict —
-        # the score-driven classification already reflects evidence.
-        engine = DetectionEngine(
-            analyzers=[_FakeAnalyzer(
-                "fake",
-                signals=(_signal(SignalCategory.SENDER_IDENTITY, SignalSeverity.CRITICAL, "s1"),),
-                blind_spots=(LANGUAGE_ASSESSMENT_UNAVAILABLE,),
-            )],
-        )
-        result = engine.analyze(_empty_email())
-
-        assert result.verdict in (
-            Verdict.SUSPICIOUS, Verdict.LIKELY_MALICIOUS, Verdict.MALICIOUS,
-        )
-        assert result.score > 0

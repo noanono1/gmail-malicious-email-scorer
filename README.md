@@ -8,17 +8,9 @@ A Gmail Add-on that analyzes an opened email and produces a maliciousness score 
 
 A thin Apps Script add-on POSTs the open message (HMAC-signed) to a Python backend. The backend runs five deterministic analyzers (authentication, sender, URL, body structure, attachment) plus one schema-constrained semantic analyzer (language assessment), folds their signals into a score with category caps and a cross-category boost, and returns a verdict together with a runtime-generated declaration of what *wasn't* checked. The card renders score, verdict, top signals (each with verbatim evidence), and limitations.
 
-Three things worth a closer look:
-
-- **Deterministic / semantic seam** — rules where the artifact is structured, one constrained extractor where the artifact is language. The semantic analyzer is severity-capped so a probabilistic assessment can never single-handedly drive `MALICIOUS`. ([Detection Capabilities](#detection-capabilities))
-- **Limitations as a first-class output** — every result declares the inspection channels it could not use, so a `safe` verdict is never confused with "fully inspected." ([Limitations](#limitations))
-- **Local SLM by design** — email content is private data that should not leave the host by default. The language analyzer runs against a local Ollama-served SLM so content stays on-premises. An OpenAI implementation also lives behind the same `LlmService` port for development iteration, but it is opt-in — not the default. ([Trade-offs](#trade-offs))
-
 ---
 
 ## Gmail Add-on UI
-
-The card is the user-facing surface — score, verdict, top signals (each with the verbatim evidence that triggered them), and a runtime-generated limitations panel.
 
 **Safe verdict — legitimate Google OAuth notification.** Score `0/100`, no threat signals, four limitations declared. A `safe` verdict is never confused with "fully inspected" — the limitations panel always declares what the system *did not* check.
 
@@ -377,7 +369,7 @@ The engine splits analyzers along a deliberate seam: **rules where the artifact 
 
 ### Limitations
 
-Every analysis result includes a limitations section — runtime-generated declarations of what the system did *not* check for this specific email. These are framed as honest disclosures of scope, not as findings against the message.
+Every analysis result includes a limitations section — runtime-generated declarations of what the system did *not* check for this specific email. Each limitation is an honest disclosure of scope: what was outside the inspection boundary for this email.
 
 | Condition | Reported `reason` | What was not checked |
 |---|---|---|
@@ -391,7 +383,7 @@ Every analysis result includes a limitations section — runtime-generated decla
 | Language Assessment analyzer disabled, provider unreachable, or response failed schema/grounding validation | "Language assessment unavailable — local SLM unreachable or its response failed validation" | Social-engineering language (paraphrased urgency, credential solicitation, authority impersonation, financial lure) could not be assessed for this email |
 | Always | "Single-email analysis only" | Only this email was analyzed — surrounding thread context was not considered |
 
-This means the result is never just "score: 5, safe" — it includes "…but the PDF attachment was not opened and URL destinations were not fetched," giving the user the scope of the check alongside the verdict.
+A result like "score: 5, safe" always ships with "…the PDF attachment was not opened and URL destinations were not fetched" — the user sees the scope of the check alongside the verdict.
 
 ---
 
@@ -419,8 +411,6 @@ Every point in the final score traces back to a specific finding with verbatim e
 
 **Infrastructure-only dampener** — when ≥2 active categories are firing, *all* of them are AUTHENTICATION or SENDER_IDENTITY ("infrastructure looks unsettled" signals), and *no* category contributes a CRITICAL-strength score (≥40), the run is multiplied by `×0.78`. This is the false-positive guard for the "SPF softfail + Reply-To mismatch on a small-vendor email" pattern: two HIGH signals across two categories that would otherwise reach LIKELY_MALICIOUS, but with no URL/body/attachment evidence declaring an actual attack. A decisive infrastructure finding (DMARC fail at CRITICAL, cousin domain at CRITICAL) disables the dampener — it's strong enough to justify the verdict on its own.
 
-**Inspection-gap floor** — when zero signals fired but a primary inspection channel was unavailable (today: the `language_assessment` blind spot), the verdict is floored from `safe` to `inconclusive` rather than certified safe on missing coverage. The numeric score stays 0 because there was nothing to score.
-
 **Score range** — the final score is clamped to `0–100`; the boost can push raw signal-sums above that, but the verdict bands and the response field both cap there.
 
 ### Verdict thresholds
@@ -431,7 +421,6 @@ Every point in the final score traces back to a specific finding with verbatim e
 | 15–34 | `suspicious` |
 | 35–64 | `likely_malicious` |
 | 65+ | `malicious` |
-| n/a | `inconclusive` (score-independent — emitted when zero signals fired but a primary inspection channel was unavailable) |
 
 Thresholds are calibrated against test cases including both attack patterns and legitimate email (transactional, marketing, internal).
 
@@ -449,7 +438,7 @@ Thresholds are calibrated against test cases including both attack patterns and 
 | Backend access | HMAC-signed requests with a 5-minute timestamp drift bound — stale signatures are rejected, but full nonce-based replay protection (rejecting a captured signature *inside* the drift window) is a deferred item, called out under "Future improvements." |
 | Request size | Hard cap on the raw request body (default 1 MiB, configurable). Oversized requests are rejected with 413 before HMAC reads the body. |
 | API schema visibility | `/docs`, `/redoc`, and `/openapi.json` are unconditionally disabled. The API surface is not published. |
-| Rate limiting / DoS | <ul><li>**Per-request bounds:** HMAC, timestamp drift, body-size cap, Pydantic field limits.</li><li>**Per-IP limiter on `/analyze`:** fixed-window (`RATE_LIMIT_PER_WINDOW` / `RATE_LIMIT_WINDOW_SECONDS`, default 60 req / 60 s). Runs *before* HMAC so blocked clients short-circuit before SHA256 reads the body.</li><li>**Scope:** in-process and per-worker — sufficient for the single-uvicorn-worker demo, not durable. Multi-worker or horizontally scaled deployments need a shared store (Redis); volumetric DDoS mitigation belongs at the edge (Cloudflare, Railway, Fly).</li><li>**`X-Forwarded-For` not trusted** — without a known proxy in front, honoring it would let callers spoof their key.</li></ul> |
+| Rate limiting / DoS | <ul><li>**Per-request bounds:** HMAC, timestamp drift, body-size cap, Pydantic field limits.</li><li>**Per-IP limiter on `/analyze`:** fixed-window (`RATE_LIMIT_PER_WINDOW` / `RATE_LIMIT_WINDOW_SECONDS`, default 60 req / 60 s). Runs *before* HMAC so blocked clients short-circuit before SHA256 reads the body.</li><li>**Scope:** in-process and per-worker — sufficient for the single-uvicorn-worker demo, not durable. Multi-worker or horizontally scaled deployments need a shared store (Redis); volumetric DDoS mitigation belongs at the edge (Cloudflare, Railway, Fly).</li></ul> |
 | Code execution | No `eval`, `exec`, or dynamic execution on any input path. |
 
 ---
@@ -482,9 +471,9 @@ Every design choice below closed one door to open another. Each is framed as wha
 
 **Single-email vs. contextual analysis** — each email is analyzed in complete isolation; no thread history, no sender profiles, no stored state. `Gain:`  no database, no user data retention, no privacy concerns from accumulated history, and trivially parallelizable. `Cost:`  cannot detect conversation hijacking, behavioral anomalies, or multi-stage campaigns where the first email is clean.
 
-**Fewer false alarms vs. catching every threat** — scoring thresholds are tuned to keep legitimate transactional and marketing emails below the suspicious threshold, accepting that some marginal attacks may score lower than they should. A security tool arguably *should* prefer false positives over false negatives — better to warn about a safe email than miss a real threat. The counter-argument, and the reason we lean this way: an inbox full of false alarms trains users to ignore the tool entirely, which defeats its purpose when a real threat arrives. `Cost:`  subtle attacks near the decision boundary may not trigger a warning. Verdict thresholds in `scoring.py` can be shifted once validated against a broader real-world email set.
+**Fewer false alarms vs. catching every threat** — scoring thresholds are tuned to keep legitimate transactional and marketing emails below the suspicious threshold, accepting that some marginal attacks may score lower than they should. An inbox full of false alarms trains users to ignore the tool entirely, which defeats its purpose when a real threat arrives — so the thresholds lean toward precision over recall. `Cost:`  subtle attacks near the decision boundary may not trigger a warning. Verdict thresholds in `scoring.py` can be shifted once validated against a broader real-world email set.
 
-**Policy-driven scoring vs. trained ML classifier** — signals are combined by a hand-authored formula (severity points, category caps, cross-category boost, dampeners) rather than a learned model. `Gain:`  every score is fully explainable — you can trace exactly which signals contributed how many points and why. No training data, no labeling pipeline, no cold-start problem. `Cost:`  the formula cannot discover patterns the author didn't anticipate; adjusting thresholds requires manual analysis rather than fitting to data. The architecture is designed so this can evolve: signals are features, and `scoring.py` is a swappable combination function.
+**Policy-driven scoring vs. trained ML classifier** — signals are combined by a hand-authored formula (severity points, category caps, cross-category boost, dampeners). `Gain:`  every score is fully explainable — you can trace exactly which signals contributed how many points and why. No training data, no labeling pipeline, no cold-start problem. `Cost:`  the formula cannot discover patterns the author didn't anticipate; adjusting thresholds requires manual analysis. The architecture is designed so this can evolve: signals are features, and `scoring.py` is a swappable combination function.
 
 ---
 

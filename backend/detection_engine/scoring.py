@@ -29,7 +29,7 @@ WITHIN_CATEGORY_ATTENUATION: float = 1.4
 Models diminishing returns on correlated evidence (SPF fail + DKIM fail).
 Calibrated against labeled fixtures: 1.6 decayed independent same-category
 evidence too aggressively (3rd signal at 39% of base); 1.4 preserves more
-of multi-signal categories (51% of base) without inflating correlated runs."""
+of multi-signal categories (51% of base) without inflating co-firing runs."""
 
 CROSS_CATEGORY_BOOST: float = 0.15
 """Multiplier added per active category beyond the first. Convergent evidence
@@ -38,18 +38,15 @@ against labeled fixtures: 0.10 left multi-category malicious cases short of
 the MALICIOUS threshold; 0.15 widens the gap between depth-penalty and
 breadth-reward, which is what we want."""
 
-# Correlated categories — these probe the same underlying question ("is the
-# sender legitimate?") from different angles, so co-firing is expected and
-# the cross-category boost overstates independence.  URL/BODY/ATTACHMENT
-# signals override the dampener because they represent genuinely orthogonal
-# evidence.
-_CORRELATED_CATEGORIES: frozenset[SignalCategory] = frozenset({
+_INFRASTRUCTURE_CATEGORIES: frozenset[SignalCategory] = frozenset({
     SignalCategory.AUTHENTICATION,
     SignalCategory.SENDER_IDENTITY,
 })
 
-CORRELATION_DAMPENER: float = 0.78
-"""Applied when ≥2 correlated categories fire and none clears CRITICAL.
+INFRASTRUCTURE_ONLY_DAMPENER: float = 0.78
+"""Applied when all active categories are infrastructure (auth/sender) with
+no attack content (URLs, body, attachments). Reduces score because
+infrastructure-only signals are more likely misconfiguration than phishing.
 Empirical: 0.85 leaves softfail+mismatch above the LIKELY_MALICIOUS threshold;
 0.65 demotes genuine spoofing patterns that should read LIKELY_MALICIOUS."""
 
@@ -92,7 +89,7 @@ def score_signals(signals: Sequence[Signal]) -> ScoringReport:
     )
     multiplier = (
         1.0 + CROSS_CATEGORY_BOOST * max(0, len(active_categories) - 1)
-    ) * _correlated_only_factor(category_totals, active_categories)
+    ) * _infrastructure_only_factor(category_totals, active_categories)
     final_score = max(0.0, min(raw_total * multiplier, 100.0))
 
     scored_signals = tuple(
@@ -154,18 +151,18 @@ def _category_totals(
     return totals
 
 
-def _correlated_only_factor(
+def _infrastructure_only_factor(
     category_totals: dict[SignalCategory, float],
     active_categories: frozenset[SignalCategory],
 ) -> float:
     if len(active_categories) < 2:
         return 1.0
-    if not active_categories.issubset(_CORRELATED_CATEGORIES):
+    if not active_categories.issubset(_INFRASTRUCTURE_CATEGORIES):
         return 1.0
     decisive = SEVERITY_POINTS[SignalSeverity.CRITICAL]
     if any(total >= decisive for total in category_totals.values()):
         return 1.0
-    return CORRELATION_DAMPENER
+    return INFRASTRUCTURE_ONLY_DAMPENER
 
 
 def _base_points(signal: Signal) -> float:

@@ -3,7 +3,6 @@ from enum import Enum
 
 class Verdict(str, Enum):
     SAFE = "safe"
-    INCONCLUSIVE = "inconclusive"
     SUSPICIOUS = "suspicious"
     LIKELY_MALICIOUS = "likely_malicious"
     MALICIOUS = "malicious"

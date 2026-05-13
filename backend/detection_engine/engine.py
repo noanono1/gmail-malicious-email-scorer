@@ -5,21 +5,13 @@ from logging import getLogger
 from detection_engine.analyzers.base import BaseAnalyzer
 from detection_engine.domain import blind_spot_catalog
 from detection_engine.domain.email import EmailData
-from detection_engine.domain.enums import BlindSpotArea, SignalCategory, Verdict
+from detection_engine.domain.enums import SignalCategory, Verdict
 from detection_engine.domain.exceptions import AnalyzerCrashed
 from detection_engine.domain.signals import AnalysisOutput, BlindSpot, ScoredSignal, Signal
 from detection_engine.domain.verdict import AnalysisResult, AnalysisScope
 from detection_engine.scoring import classify_verdict, score_signals
 
 logger = getLogger(__name__)
-
-
-# Blind spots representing a failure to inspect a primary content channel.
-# AUTHENTICATION_HEADERS is excluded — missing auth headers is a routine
-# environmental gap (most add-on extractions don't surface them).
-_DIAGNOSTIC_CRITICAL_BLIND_SPOT_AREAS: frozenset[BlindSpotArea] = frozenset({
-    BlindSpotArea.LANGUAGE_ASSESSMENT,
-})
 
 
 class DetectionEngine:
@@ -41,7 +33,6 @@ class DetectionEngine:
 
         report = score_signals(all_signals)
         verdict = classify_verdict(report.final_score)
-        verdict = _floor_verdict_for_inspection_gaps(verdict, all_signals, blind_spots)
         top_signals = _pick_top_signals(report.scored_signals, count=3)
 
         scope = AnalysisScope(
@@ -88,23 +79,6 @@ def _pick_top_signals(
     return tuple(by_contribution[:count])
 
 
-def _floor_verdict_for_inspection_gaps(
-    verdict: Verdict,
-    signals: tuple[Signal, ...],
-    blind_spots: tuple[BlindSpot, ...],
-) -> Verdict:
-    """SAFE → INCONCLUSIVE when zero signals fired but a primary channel
-    was unavailable. INCONCLUSIVE is orthogonal to the SAFE→MALICIOUS
-    ladder: "no coverage to judge", not "judged and found middling"."""
-    if signals or verdict != Verdict.SAFE:
-        return verdict
-    has_critical_gap = any(
-        blind_spot.area in _DIAGNOSTIC_CRITICAL_BLIND_SPOT_AREAS
-        for blind_spot in blind_spots
-    )
-    return Verdict.INCONCLUSIVE if has_critical_gap else verdict
-
-
 def _explain(
     verdict: Verdict,
     top_signals: tuple[ScoredSignal, ...],
@@ -116,21 +90,12 @@ def _explain(
     ``active_categories`` is from scoring (every category > 0 points).
     Deriving from ``top_signals`` would undercount past the top 3."""
     if not top_signals:
-        if verdict == Verdict.SAFE:
-            if blind_spots:
-                return (
-                    f"Verdict: {verdict.value}. \n No threat signals detected, "
-                    f"but {len(blind_spots)} area(s) could not be inspected."
-                )
-            return f"Verdict: {verdict.value}. \n No threat signals detected."
-        # No signals + non-SAFE means the inspection-gap floor applied.
-        # Avoid the word "score" — it is 0 and the floor exists to make
-        # sense of that.
-        return (
-            f"Verdict: {verdict.value}.\n"
-            f"Primary content could not be inspected "
-            f"({len(blind_spots)} area(s)) — not enough coverage to judge."
-        )
+        if blind_spots:
+            return (
+                f"Verdict: {verdict.value}. \n No threat signals detected, "
+                f"but {len(blind_spots)} area(s) could not be inspected."
+            )
+        return f"Verdict: {verdict.value}. \n No threat signals detected."
 
     header = f"Verdict: {verdict.value}."
 
