@@ -1,4 +1,4 @@
-"""Unit tests for SenderAnalyzer — cousin domain, reply-to, return-path."""
+"""Unit tests for SenderAnalyzer — cousin domain, reply-to."""
 
 from __future__ import annotations
 
@@ -166,15 +166,15 @@ class TestReplyToMismatch:
         output = analyzer.analyze(email)
         assert not [s for s in output.signals if s.id == "reply_to_mismatch"]
 
-    def test_freemail_sender_reply_to_not_flagged(self, analyzer: SenderAnalyzer):
+    def test_freemail_sender_reply_to_suppressed(self, analyzer: SenderAnalyzer):
         email = _make_email(
             sender_address="john@gmail.com",
-            reply_to_address="john.doe@yahoo.com",
+            reply_to_address="john.doe@someother.com",
         )
         output = analyzer.analyze(email)
         assert not [s for s in output.signals if s.id == "reply_to_mismatch"]
 
-    def test_freemail_to_freemail_protonmail(self, analyzer: SenderAnalyzer):
+    def test_freemail_to_freemail_suppressed(self, analyzer: SenderAnalyzer):
         email = _make_email(
             sender_address="ceo@outlook.com",
             reply_to_address="ceo-payments@protonmail.com",
@@ -193,72 +193,6 @@ class TestReplyToMismatch:
 
 
 # ---------------------------------------------------------------------------
-# SENDER-4: Return-Path mismatch (ESP-aware)
-# ---------------------------------------------------------------------------
-
-
-class TestReturnPathMismatch:
-    def test_different_non_esp_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="user@company.com",
-            return_path_address="bounce@shady.xyz",
-        )
-        output = analyzer.analyze(email)
-        rp = [s for s in output.signals if s.id == "return_path_mismatch"]
-        assert len(rp) == 1
-        assert rp[0].severity == SignalSeverity.MEDIUM
-
-    def test_esp_return_path_not_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="user@company.com",
-            return_path_address="bounces@em.sendgrid.net",
-        )
-        output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "return_path_mismatch"]
-
-    def test_amazonses_not_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="user@amazon.com",
-            return_path_address="bounce@amazonses.com",
-        )
-        output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "return_path_mismatch"]
-
-    def test_same_domain_not_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="user@company.com",
-            return_path_address="noreply@company.com",
-        )
-        output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "return_path_mismatch"]
-
-    def test_bounce_subdomain_not_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="alerts@accounts.google.com",
-            return_path_address="noreply@gaia.bounces.google.com",
-        )
-        output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "return_path_mismatch"]
-
-    def test_country_tld_subdomain_not_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="user@amazon.co.uk",
-            return_path_address="bounce@ses.amazon.co.uk",
-        )
-        output = analyzer.analyze(email)
-        assert not [s for s in output.signals if s.id == "return_path_mismatch"]
-
-    def test_different_registered_domain_still_flagged(self, analyzer: SenderAnalyzer):
-        email = _make_email(
-            sender_address="ceo@company.com",
-            return_path_address="bounce@attacker.com",
-        )
-        output = analyzer.analyze(email)
-        rp = [s for s in output.signals if s.id == "return_path_mismatch"]
-        assert len(rp) == 1
-
-
-# ---------------------------------------------------------------------------
 # Real fixtures
 # ---------------------------------------------------------------------------
 
@@ -269,7 +203,6 @@ class TestRealFixtures:
         output = analyzer.analyze(email)
         ids = {s.id for s in output.signals}
         assert "cousin_domain" in ids
-        assert "return_path_mismatch" in ids
 
     def test_legit_amazon(self, analyzer: SenderAnalyzer):
         email = build_email_data(LEGIT_AMAZON_ORDER["email"])

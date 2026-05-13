@@ -2481,30 +2481,6 @@ SENDER_REPLY_TO_MISMATCH_ONLY = {
     ),
 }
 
-SENDER_RETURN_PATH_MISMATCH_ONLY = {
-    "label": "Sender isolation — Return-Path on different non-ESP domain (MEDIUM×0.8)",
-    "tags": ["return_path_mismatch", "isolation"],
-    "expected": {
-        "verdict_in": [Verdict.SAFE, Verdict.SUSPICIOUS],
-        "max_score": 14,
-    },
-    "email": _email(
-        message_id="sender-iso-004",
-        sender_address="info@vendor-corp.example",
-        recipient="customer@example.com",
-        subject="Welcome",
-        body_text="Welcome to Vendor Corp.",
-        headers=[
-            {"name": "From", "value": "info@vendor-corp.example"},
-            {"name": "Authentication-Results", "value": (
-                "mx.example.com; spf=pass smtp.mailfrom=vendor-corp.example; "
-                "dkim=pass header.d=vendor-corp.example; "
-                "dmarc=pass header.from=vendor-corp.example"
-            )},
-        ],
-        return_path_address="bounce@unrelated-bounce.example",
-    ),
-}
 
 SENDER_TYPOSQUAT_PAYPAL_ONLY = {
     "label": "Sender isolation — paypa1.com cousin domain (CRITICAL/1.0 → 35)",
@@ -3347,7 +3323,6 @@ ALL_FIXTURES: list[dict] = [
     URL_HREF_MATCHING_DISPLAY_CLEAN,
     # Sender isolation
     SENDER_REPLY_TO_MISMATCH_ONLY,
-    SENDER_RETURN_PATH_MISMATCH_ONLY,
     SENDER_TYPOSQUAT_PAYPAL_ONLY,
     SENDER_TYPOSQUAT_GOOGLE_ZERO,
     # Body isolation

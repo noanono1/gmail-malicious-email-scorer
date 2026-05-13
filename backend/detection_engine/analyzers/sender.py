@@ -137,7 +137,6 @@ class SenderAnalyzer(BaseAnalyzer):
         candidates = (
             self._cousin_domain_signal(sender_domain),
             self._reply_to_mismatch_signal(email, sender_domain),
-            self._return_path_mismatch_signal(email, sender_domain),
         )
         return AnalysisOutput(
             signals=tuple(signal for signal in candidates if signal is not None),
@@ -169,8 +168,6 @@ class SenderAnalyzer(BaseAnalyzer):
             return None
         if _is_esp_domain(reply_domain):
             return None
-        # Freemail-to-anywhere reply-to is too noisy — users routinely set
-        # a different reply address on personal mail.
         if sender_domain in _FREEMAIL_DOMAINS:
             return None
 
@@ -185,25 +182,3 @@ class SenderAnalyzer(BaseAnalyzer):
             ),
         )
 
-    def _return_path_mismatch_signal(self, email: EmailData, sender_domain: str) -> Signal | None:
-        if not email.return_path_address:
-            return None
-
-        return_domain = email_domain(email.return_path_address)
-        if return_domain is None or return_domain == sender_domain:
-            return None
-        if same_organization(return_domain, sender_domain):
-            return None
-        if _is_esp_domain(return_domain):
-            return None
-
-        return Signal(
-            id="return_path_mismatch",
-            category=SignalCategory.SENDER_IDENTITY,
-            severity=SignalSeverity.MEDIUM,
-            confidence=0.8,
-            summary=(
-                f"Return-Path domain ({return_domain}) differs from "
-                f"sender domain ({sender_domain})"
-            ),
-        )

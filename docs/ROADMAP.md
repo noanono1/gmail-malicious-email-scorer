@@ -50,8 +50,8 @@ Three analyzers covering the highest-value, lowest-FP-risk deterministic indicat
 |---|---|
 | **File** | `detection_engine/analyzers/sender.py` |
 | **Category** | SENDER_IDENTITY |
-| **Signals** | SENDER-1 (cousin/lookalike domain → CRITICAL), SENDER-3 (From ≠ Reply-To → HIGH), SENDER-4 (Return-Path ≠ From domain → MEDIUM) |
-| **Notes** | Cousin domain: curated brand list, length-scaled Levenshtein budget, visual-substitution normalization (1↔l, 0↔o, 5↔s, rn↔m, vv↔w, cl↔d), trusted-public-suffix allowlist for legitimate regional brand mail. SENDER-3/4 suppress same-org pairs, known ESPs; SENDER-3 additionally suppresses when the sender is a freemail provider (personal mail routinely sets a different reply address). Display-name impersonation was prototyped (SENDER-5) and removed — see "Deferred Indicators" in `docs/detection-policy.md`. |
+| **Signals** | SENDER-1 (cousin/lookalike domain → CRITICAL), SENDER-3 (From ≠ Reply-To → HIGH) |
+| **Notes** | Cousin domain: curated brand list, length-scaled Levenshtein budget, visual-substitution normalization (1↔l, 0↔o, 5↔s, rn↔m, vv↔w, cl↔d), trusted-public-suffix allowlist for legitimate regional brand mail. SENDER-3 suppresses same-org pairs, known ESPs, and freemail senders (personal mail routinely sets a different reply address). Return-Path mismatch (SENDER-4) was removed — SPF already validates envelope-sender legitimacy at the protocol level. Display-name impersonation was prototyped (SENDER-5) and removed — see "Deferred Indicators" in `docs/detection-policy.md`. |
 
 ### 3. BodyContentAnalyzer (structural)
 

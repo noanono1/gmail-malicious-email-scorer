@@ -290,14 +290,6 @@ Liveness probe. No authentication, no request body.
       "score_contribution": 40.0
     },
     {
-      "id": "return_path_mismatch",
-      "category": "sender_identity",
-      "severity": "medium",
-      "summary": "Return-Path domain (cheap-mailer.xyz) differs from sender domain (paypa1-support.com)",
-      "confidence": 0.8,
-      "score_contribution": 6.86
-    },
-    {
       "id": "ip_address_in_url",
       "category": "url_structure",
       "severity": "high",
@@ -356,7 +348,7 @@ The engine splits analyzers along a deliberate seam: **rules where the artifact 
 | Analyzer | Category | Signals |
 |---|---|---|
 | **Authentication** | Authentication | SPF/DKIM/DMARC failures, plus blind-spot reporting for `none`/`temperror` results |
-| **Sender** | Sender identity | Cousin/typosquat domains, Reply-To mismatch, Return-Path mismatch |
+| **Sender** | Sender identity | Cousin/typosquat domains, Reply-To mismatch |
 | **URL** | URL structure | Anchor/href mismatch, IP-literal hosts (IPv4 / IPv6), dangerous URI schemes (`javascript:`, `data:`, `vbscript:`, `file:`) |
 | **Body content** | Body content | HTML `<form>` with input fields in the email body (structural only — language-based body checks are owned by the Language Assessment analyzer below) |
 | **Attachment** | Attachment | Dangerous extensions (.exe, .scr, .js, .html), double extensions (.pdf.exe), macro-enabled Office files, password-protected archive hints |
@@ -379,7 +371,7 @@ Every analysis result includes a limitations section — runtime-generated decla
 | Email has an HTML body | "HTML body not rendered — text extracted from raw markup" | The message was not rendered as a browser would display it, so CSS- or script-driven content was not evaluated |
 | Authentication-Results header absent | "No Authentication-Results header present" | SPF, DKIM, and DMARC were not evaluated for this email |
 | An auth method returned `none` / `temperror` | "`<METHOD>` returned '`<result>`' — verification could not be performed" | The specific authentication method could not be enforced for this email |
-| From address could not be parsed | "From address could not be parsed" | Sender identity checks (cousin domain, reply-to and return-path mismatch) were skipped |
+| From address could not be parsed | "From address could not be parsed" | Sender identity checks (cousin domain, reply-to mismatch) were skipped |
 | Language Assessment analyzer disabled, provider unreachable, or response failed schema/grounding validation | "Language assessment unavailable — local SLM unreachable or its response failed validation" | Social-engineering language (paraphrased urgency, credential solicitation, authority impersonation, financial lure) could not be assessed for this email |
 | Always | "Single-email analysis only" | Only this email was analyzed — surrounding thread context was not considered |
 

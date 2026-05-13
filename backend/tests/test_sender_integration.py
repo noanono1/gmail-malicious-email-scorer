@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from detection_engine import DetectionEngine, SignalCategory, Verdict
+from detection_engine import DetectionEngine, SignalCategory, SignalSeverity, Verdict
 from detection_engine.analyzers.authentication import AuthenticationAnalyzer
 from detection_engine.analyzers.sender import SenderAnalyzer
 from tests.email_fixtures import (
@@ -61,15 +61,16 @@ class TestSpearPhishCousinDomain:
 
 
 class TestBecWireTransfer:
-    """Freemail BEC — reply-to suppressed (freemail→freemail), only content signals remain."""
+    """Freemail BEC — reply-to suppressed (freemail sender), verdict stays SAFE."""
 
-    def test_no_sender_signals(self):
+    def test_reply_to_mismatch_suppressed(self):
         result = _engine().analyze(build_email_data(BEC_WIRE_TRANSFER["email"]))
-        assert SignalCategory.SENDER_IDENTITY not in result.active_categories
+        reply_to = [s for s in result.signals if s.signal.id == "reply_to_mismatch"]
+        assert len(reply_to) == 0
 
-    def test_verdict_safe_or_suspicious(self):
+    def test_verdict_safe(self):
         result = _engine().analyze(build_email_data(BEC_WIRE_TRANSFER["email"]))
-        assert result.verdict in {Verdict.SAFE, Verdict.SUSPICIOUS}
+        assert result.verdict == Verdict.SAFE
 
 
 class TestLegitEmailsStaySafe:
